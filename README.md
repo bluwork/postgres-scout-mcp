@@ -1,6 +1,6 @@
 # Postgres Scout MCP
 
-Production-ready Model Context Protocol server for safe PostgreSQL database interaction. Enables AI assistants to explore, analyze, and maintain PostgreSQL databases with built-in safety features.
+Model Context Protocol server for safe PostgreSQL database interaction. Enables AI assistants to explore, analyze, and maintain PostgreSQL databases with built-in safety features.
 
 ## Features
 
