@@ -14,8 +14,8 @@ Production-ready Model Context Protocol server for safe PostgreSQL database inte
 ## Installation
 
 ```bash
-npm install
-npm run build
+pnpm install
+pnpm build
 ```
 
 ## Quick Start
@@ -274,13 +274,13 @@ All queries have configurable timeouts:
 ### Build
 
 ```bash
-npm run build
+pnpm build
 ```
 
 ### Watch Mode
 
 ```bash
-npm run watch
+pnpm watch
 ```
 
 ### Project Structure
@@ -419,5 +419,5 @@ Contributions welcome! Areas of focus:
 
 ## Support
 
-- Issues: https://github.com/yourusername/postgres-scout-mcp/issues
-- Documentation: See planning document for detailed feature specifications
+- Issues: [GitHub Issues](https://github.com/bluwork/postgres-scout-mcp/issues)
+- Repository: [GitHub](https://github.com/bluwork/postgres-scout-mcp)
