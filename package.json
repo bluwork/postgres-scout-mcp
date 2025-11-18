@@ -1,0 +1,36 @@
+{
+  "name": "postgres-scout-mcp",
+  "version": "0.1.0",
+  "description": "Production-ready Model Context Protocol server for safe PostgreSQL database interaction",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "postgres-scout": "./bin/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "dev": "tsc --watch",
+    "prepare": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "postgres",
+    "postgresql",
+    "database",
+    "ai",
+    "model-context-protocol"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.21.1",
+    "pg": "^8.11.3",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.0",
+    "@types/pg": "^8.10.9",
+    "typescript": "^5.9.3"
+  }
+}
