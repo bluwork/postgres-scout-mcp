@@ -153,7 +153,7 @@ Execute SELECT queries with safety checks.
 ```
 
 #### `explainQuery`
-Analyze query performance with EXPLAIN ANALYZE.
+Analyze query performance with EXPLAIN ANALYZE. In read-only mode, `analyze` is forced to `false` to avoid executing statements.
 
 ```json
 {

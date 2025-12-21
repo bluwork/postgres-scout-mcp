@@ -49,7 +49,17 @@ export async function explainQueryTool(
   logger: Logger,
   args: z.infer<typeof ExplainQuerySchema>
 ): Promise<any> {
-  const { query, params, analyze, verbose, buffers } = args;
+  const { query, params, verbose, buffers } = args;
+
+  const isReadOnly = connection.config.mode === 'read-only';
+  const requestedAnalyze = args.analyze;
+  const analyze = isReadOnly ? false : requestedAnalyze;
+
+  if (isReadOnly && requestedAnalyze) {
+    logger.warn('explainQuery', 'Read-only mode forces analyze=false for safety', {
+      queryLength: query.length
+    });
+  }
 
   logger.info('explainQuery', 'Analyzing query performance', {
     queryLength: query.length,
@@ -61,7 +71,7 @@ export async function explainQueryTool(
   const explainOptions: string[] = ['FORMAT JSON'];
   if (analyze) explainOptions.push('ANALYZE');
   if (verbose) explainOptions.push('VERBOSE');
-  if (buffers) explainOptions.push('BUFFERS');
+  if (analyze && buffers) explainOptions.push('BUFFERS');
 
   const explainQuery = `EXPLAIN (${explainOptions.join(', ')}) ${query}`;
 
