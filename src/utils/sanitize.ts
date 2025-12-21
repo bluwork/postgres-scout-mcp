@@ -27,6 +27,8 @@ const DANGEROUS_PATTERNS = [
   /UNION\s+(ALL\s+)?SELECT/i
 ];
 
+const CTE_DATA_MODIFYING_PATTERN = /\bAS\s+(NOT\s+)?MATERIALIZED\s*\(\s*(INSERT|UPDATE|DELETE|TRUNCATE)\b|\bAS\s*\(\s*(INSERT|UPDATE|DELETE|TRUNCATE)\b/i;
+
 const WHERE_DANGEROUS_PATTERNS = [
   /;\s*\w/i,
   /--/,
@@ -59,6 +61,12 @@ export function sanitizeQuery(query: string, mode: DatabaseMode): void {
     if (pattern.test(trimmedQuery)) {
       throw new Error('Potentially dangerous query pattern detected');
     }
+  }
+
+  if (mode === 'read-only' && CTE_DATA_MODIFYING_PATTERN.test(trimmedQuery)) {
+    throw new Error(
+      'Data-modifying statements (INSERT, UPDATE, DELETE, TRUNCATE) are not allowed within CTEs in read-only mode'
+    );
   }
 
   if (trimmedQuery.includes(';') && trimmedQuery.indexOf(';') !== trimmedQuery.length - 1) {
