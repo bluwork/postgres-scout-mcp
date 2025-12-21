@@ -108,7 +108,7 @@ function getToolDescription(name: string, mode: string): string {
 
     // Query operations
     executeQuery: `Execute SELECT queries${mode === 'read-write' ? ' or write operations' : ' (read-only)'}`,
-    explainQuery: 'Analyze query performance using EXPLAIN ANALYZE',
+    explainQuery: `Analyze query performance using EXPLAIN${mode === 'read-only' ? ' (ANALYZE disabled)' : ' ANALYZE'}`,
 
     // Data quality tools
     findDuplicates: 'Find duplicate rows based on column combinations',
