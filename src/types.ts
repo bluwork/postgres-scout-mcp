@@ -35,6 +35,7 @@ export interface TableInfo {
   schema: string;
   type: string;
   rowEstimate: number;
+  needsAnalyze?: boolean;
   sizeBytes: number;
   indexSize: number;
   totalSize: number;

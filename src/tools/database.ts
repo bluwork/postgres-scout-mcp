@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { DatabaseConnection, DatabaseStats } from '../types.js';
 import { Logger } from '../utils/logger.js';
-import { executeQuery } from '../utils/database.js';
+import { ensureDatabaseExists, executeQuery, getCurrentDatabaseName } from '../utils/database.js';
 
 const ListDatabasesSchema = z.object({});
 
@@ -47,12 +47,20 @@ export async function getDatabaseStats(
   logger: Logger,
   args: z.infer<typeof GetDatabaseStatsSchema>
 ): Promise<DatabaseStats> {
-  const database = args.database || connection.pool.options.database || 'current';
+  const currentDatabase = await getCurrentDatabaseName(connection, logger);
+  const requestedDatabase = args.database;
 
-  logger.info('getDatabaseStats', 'Getting database statistics', { database });
+  if (requestedDatabase) {
+    await ensureDatabaseExists(connection, logger, requestedDatabase);
+    if (requestedDatabase !== currentDatabase) {
+      throw new Error(`Connected to "${currentDatabase}". Reconnect to "${requestedDatabase}" to fetch its stats.`);
+    }
+  }
+
+  logger.info('getDatabaseStats', 'Getting database statistics', { database: currentDatabase });
 
   const queries = await Promise.all([
-    getSizeStats(connection, logger, database),
+    getSizeStats(connection, logger, currentDatabase),
     getObjectCounts(connection, logger),
     getConnectionStats(connection, logger),
     getCacheStats(connection, logger),
@@ -62,7 +70,7 @@ export async function getDatabaseStats(
   const [sizeStats, objectCounts, connectionStats, cacheStats, tupleStats] = queries;
 
   return {
-    database,
+    database: currentDatabase,
     size: sizeStats.size,
     tables: objectCounts.tables,
     indexes: objectCounts.indexes,

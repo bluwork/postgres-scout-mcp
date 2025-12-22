@@ -97,6 +97,32 @@ export async function executeQuery(
   }
 }
 
+export async function getCurrentDatabaseName(
+  connection: DatabaseConnection,
+  logger: Logger
+): Promise<string> {
+  const query = 'SELECT current_database() as name';
+  const result = await executeQuery(connection, logger, { query });
+  return result.rows[0]?.name || connection.pool.options.database || 'current';
+}
+
+export async function ensureDatabaseExists(
+  connection: DatabaseConnection,
+  logger: Logger,
+  database: string
+): Promise<void> {
+  const query = `
+    SELECT 1
+    FROM pg_catalog.pg_database
+    WHERE datname = $1
+  `;
+  const result = await executeQuery(connection, logger, { query, params: [database] });
+
+  if (result.rowCount === 0) {
+    throw new Error(`Database "${database}" does not exist`);
+  }
+}
+
 export async function closeDatabaseConnection(connection: DatabaseConnection, logger: Logger): Promise<void> {
   try {
     await connection.pool.end();

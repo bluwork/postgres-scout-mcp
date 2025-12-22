@@ -65,7 +65,12 @@ export async function listTables(
         WHEN 'm' THEN 'MATERIALIZED VIEW'
         WHEN 'p' THEN 'PARTITIONED TABLE'
       END as type,
-      c.reltuples::bigint as row_estimate,
+      CASE
+        WHEN c.reltuples < 0 THEN NULL
+        ELSE c.reltuples::bigint
+      END as row_estimate,
+      pg_stat_get_live_tuples(c.oid) as live_tuples,
+      c.reltuples < 0 as needs_analyze,
       pg_total_relation_size(c.oid) as total_size,
       pg_table_size(c.oid) as table_size,
       pg_indexes_size(c.oid) as index_size,
@@ -85,18 +90,25 @@ export async function listTables(
     params: [schema]
   });
 
-  const tables: TableInfo[] = result.rows.map(row => ({
-    name: row.name,
-    schema: row.schema,
-    type: row.type,
-    rowEstimate: parseInt(row.row_estimate, 10),
-    sizeBytes: parseInt(row.table_size, 10),
-    indexSize: parseInt(row.index_size, 10),
-    totalSize: parseInt(row.total_size, 10),
-    lastVacuum: row.last_vacuum,
-    lastAnalyze: row.last_analyze,
-    isPartitioned: row.is_partitioned
-  }));
+  const tables: TableInfo[] = result.rows.map(row => {
+    const rowEstimate = row.row_estimate === null
+      ? parseInt(row.live_tuples || '0', 10)
+      : parseInt(row.row_estimate, 10);
+
+    return {
+      name: row.name,
+      schema: row.schema,
+      type: row.type,
+      rowEstimate,
+      ...(row.needs_analyze && { needsAnalyze: true }),
+      sizeBytes: parseInt(row.table_size, 10),
+      indexSize: parseInt(row.index_size, 10),
+      totalSize: parseInt(row.total_size, 10),
+      lastVacuum: row.last_vacuum,
+      lastAnalyze: row.last_analyze,
+      isPartitioned: row.is_partitioned
+    };
+  });
 
   return {
     schema,

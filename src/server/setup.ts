@@ -198,6 +198,8 @@ function convertZodType(zodType: any): any {
         type: 'array',
         items: convertZodType(zodType._def?.type)
       };
+    case 'ZodEnum':
+      return { type: 'string', enum: zodType._def?.values || [] };
     case 'ZodOptional':
       return convertZodType(zodType._def?.innerType);
     case 'ZodDefault':
