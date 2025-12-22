@@ -248,6 +248,14 @@ previewUpdate({
   where: "status = 'active' AND created_at > '2024-01-01'"
 })
 
+// SafeUpdate: raw SET strings are opt-in
+safeUpdate({
+  table: "users",
+  set: "status = 'inactive'",
+  where: "last_login < NOW() - INTERVAL '1 year'",
+  allowRawSet: true
+})
+
 // Blocked - dangerous patterns
 previewUpdate({
   table: "users",

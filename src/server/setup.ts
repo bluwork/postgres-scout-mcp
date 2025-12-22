@@ -150,7 +150,7 @@ function getToolDescription(name: string, mode: string): string {
     // Mutation tools (safe write operations)
     previewUpdate: 'Preview which rows would be affected by an UPDATE without modifying data',
     previewDelete: 'Preview which rows would be deleted without actually deleting them',
-    safeUpdate: 'Execute UPDATE with safety guards: dry-run mode, maxRows limit, empty WHERE protection',
+    safeUpdate: 'Execute UPDATE with safety guards: dry-run mode, maxRows limit, empty WHERE protection. Raw SET strings require allowRawSet=true',
     safeDelete: 'Execute DELETE with safety guards: dry-run mode, maxRows limit, empty WHERE protection',
 
     // Live monitoring tools
