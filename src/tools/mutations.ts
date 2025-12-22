@@ -23,6 +23,7 @@ const SafeUpdateSchema = z.object({
   schema: z.string().optional().default('public'),
   set: z.union([z.string(), z.record(z.any())]),
   where: z.string(),
+  allowRawSet: z.boolean().optional().default(false),
   dryRun: z.boolean().optional().default(false),
   maxRows: z.number().optional().default(1000),
   allowEmptyWhere: z.boolean().optional().default(false)
@@ -37,10 +38,27 @@ const SafeDeleteSchema = z.object({
   allowEmptyWhere: z.boolean().optional().default(false)
 });
 
-function validateWhereClause(where: string, allowEmpty: boolean): { valid: boolean; warning?: string } {
-  const trimmed = where.trim().toLowerCase();
+function normalizeWhereForSafety(where: string): string {
+  let normalized = where.trim().toLowerCase().replace(/\s+/g, '');
 
-  if (!trimmed || trimmed === '1=1' || trimmed === 'true') {
+  // Strip wrapping parentheses like ((1=1))
+  while (normalized.startsWith('(') && normalized.endsWith(')')) {
+    normalized = normalized.slice(1, -1).trim();
+  }
+
+  return normalized;
+}
+
+function validateWhereClause(where: string, allowEmpty: boolean): { valid: boolean; warning?: string } {
+  const trimmed = where.trim();
+  const normalized = normalizeWhereForSafety(where);
+
+  const isAlwaysTrue =
+    normalized === '' ||
+    normalized === '1=1' ||
+    normalized === 'true';
+
+  if (!trimmed || isAlwaysTrue) {
     if (!allowEmpty) {
       return {
         valid: false,
@@ -182,7 +200,7 @@ export async function safeUpdate(
   logger: Logger,
   args: z.infer<typeof SafeUpdateSchema>
 ): Promise<any> {
-  const { table, schema, set, where, dryRun, maxRows, allowEmptyWhere } = args;
+  const { table, schema, set, where, dryRun, maxRows, allowEmptyWhere, allowRawSet } = args;
 
   logger.info('safeUpdate', 'Executing safe UPDATE', { schema, table, dryRun });
 
@@ -241,6 +259,9 @@ export async function safeUpdate(
   let params: any[] = [];
 
   if (typeof set === 'string') {
+    if (!allowRawSet) {
+      throw new Error('Raw SET strings are disabled by default. Provide an object or set allowRawSet=true.');
+    }
     setClause = set;
   } else {
     const setClauses: string[] = [];

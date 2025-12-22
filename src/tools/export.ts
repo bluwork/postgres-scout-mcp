@@ -194,6 +194,16 @@ function formatAsCSV(rows: any[], includeHeaders: boolean): string {
   const columns = Object.keys(rows[0]);
   const lines: string[] = [];
 
+  function escapeCsvValue(value: string): string {
+    const trimmed = value.trimStart();
+    const needsFormulaEscape = /^[=+\-@]/.test(trimmed);
+    const safeValue = needsFormulaEscape ? `'${value}` : value;
+    if (safeValue.includes(',') || safeValue.includes('"') || safeValue.includes('\n')) {
+      return `"${safeValue.replace(/"/g, '""')}"`;
+    }
+    return safeValue;
+  }
+
   if (includeHeaders) {
     lines.push(columns.join(','));
   }
@@ -203,10 +213,7 @@ function formatAsCSV(rows: any[], includeHeaders: boolean): string {
       const value = row[col];
       if (value === null || value === undefined) return '';
       const str = String(value);
-      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-        return `"${str.replace(/"/g, '""')}"`;
-      }
-      return str;
+      return escapeCsvValue(str);
     });
     lines.push(values.join(','));
   }
