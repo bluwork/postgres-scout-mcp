@@ -109,6 +109,8 @@ Get comprehensive database statistics.
 }
 ```
 
+Note: the `database` parameter must match the current connection; reconnect to target a different database.
+
 ### Schema Operations
 
 #### `listSchemas`
@@ -127,6 +129,9 @@ List tables with detailed information.
   "includeSystemTables": false
 }
 ```
+
+Notes:
+- `rowEstimate` is based on PostgreSQL statistics; when `needsAnalyze` is `true`, run `ANALYZE` for a reliable estimate.
 
 #### `describeTable`
 Get comprehensive table information including columns, constraints, and indexes.
@@ -164,6 +169,42 @@ Analyze query performance with EXPLAIN ANALYZE. In read-only mode, `analyze` is 
   "buffers": true
 }
 ```
+
+### Maintenance & Diagnostics
+
+#### `getHealthScore`
+Calculate overall database health score.
+
+```json
+{
+  "database": "production"
+}
+```
+
+Note: the `database` parameter must match the current connection; reconnect to target a different database.
+
+#### `getSlowQueries`
+Analyze slow queries using `pg_stat_statements` (extension required).
+
+```json
+{
+  "minDurationMs": 100,
+  "limit": 10,
+  "orderBy": "total_time"
+}
+```
+
+## Enum Parameter Reference
+
+- `exportTable.format`: `csv`, `json`, `jsonl`, `sql`
+- `getSlowQueries.orderBy`: `total_time`, `mean_time`, `calls`
+- `getLiveMetrics.metrics`: `queries`, `connections`, `locks`, `transactions`, `cache`
+- `getHottestTables.orderBy`: `seq_scan`, `idx_scan`, `writes`, `size`
+- `detectAnomalies.type`: `query_performance`, `data_volume`, `connections`, `errors`, `all`
+- `detectAnomalies.sensitivityLevel`: `low`, `medium`, `high`
+- `analyzeTimeSeries.groupBy`: `hour`, `day`, `week`, `month`
+- `analyzeTimeSeries.aggregation`: `sum`, `avg`, `count`, `min`, `max`
+- `detectSeasonality.groupBy`: `day_of_week`, `day_of_month`, `month`, `quarter`
 
 ## Usage Examples
 

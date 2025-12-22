@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { DatabaseConnection } from '../types.js';
 import { Logger } from '../utils/logger.js';
-import { executeQuery } from '../utils/database.js';
+import { ensureDatabaseExists, executeQuery, getCurrentDatabaseName } from '../utils/database.js';
 import { escapeIdentifier, sanitizeIdentifier } from '../utils/sanitize.js';
 
 const AnalyzeTableBloatSchema = z.object({
@@ -286,9 +286,17 @@ export async function getHealthScore(
   logger: Logger,
   args: z.infer<typeof GetHealthScoreSchema>
 ): Promise<any> {
-  const database = args.database || connection.pool.options.database || 'current';
+  const currentDatabase = await getCurrentDatabaseName(connection, logger);
+  const requestedDatabase = args.database;
 
-  logger.info('getHealthScore', 'Calculating health score', { database });
+  if (requestedDatabase) {
+    await ensureDatabaseExists(connection, logger, requestedDatabase);
+    if (requestedDatabase !== currentDatabase) {
+      throw new Error(`Connected to "${currentDatabase}". Reconnect to "${requestedDatabase}" to calculate its health score.`);
+    }
+  }
+
+  logger.info('getHealthScore', 'Calculating health score', { database: currentDatabase });
 
   // Gather multiple health metrics in parallel
   const [
@@ -380,7 +388,7 @@ export async function getHealthScore(
   }
 
   return {
-    database,
+    database: currentDatabase,
     overallScore,
     scoreBreakdown,
     issues,
@@ -408,11 +416,7 @@ export async function getSlowQueries(
   const hasExtension = parseInt(extResult.rows[0]?.count || '0', 10) > 0;
 
   if (!hasExtension) {
-    return {
-      error: 'pg_stat_statements extension not installed',
-      recommendation: 'Install with: CREATE EXTENSION pg_stat_statements;',
-      slowQueries: []
-    };
+    throw new Error('pg_stat_statements extension not installed. Install with: CREATE EXTENSION pg_stat_statements;');
   }
 
   const orderByMap = {
