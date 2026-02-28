@@ -25,6 +25,31 @@ const DANGEROUS_PATTERNS = [
   /UNION\s+(ALL\s+)?SELECT/i
 ];
 
+const QUERY_DANGEROUS_FUNCTIONS = [
+  /\bpg_read_file\s*\(/i,
+  /\bpg_read_binary_file\s*\(/i,
+  /\bpg_ls_dir\s*\(/i,
+  /\bpg_ls_logdir\s*\(/i,
+  /\bpg_ls_waldir\s*\(/i,
+  /\bpg_ls_tmpdir\s*\(/i,
+  /\bpg_ls_archive_statusdir\s*\(/i,
+  /\bpg_stat_file\s*\(/i,
+  /\bpg_sleep\s*\(/i,
+  /\blo_import\s*\(/i,
+  /\blo_export\s*\(/i,
+  /\bdblink\s*\(/i,
+  /\bcurrent_setting\s*\(/i,
+  /\bset_config\s*\(/i,
+];
+
+const SENSITIVE_CATALOGS = [
+  /\bpg_shadow\b/i,
+  /\bpg_authid\b/i,
+  /\bpg_auth_members\b/i,
+  /\bpg_hba_file_rules\b/i,
+  /\bpg_file_settings\b/i,
+];
+
 const CTE_DATA_MODIFYING_PATTERN = /\bAS\s+(NOT\s+)?MATERIALIZED\s*\(\s*(INSERT|UPDATE|DELETE|TRUNCATE)\b|\bAS\s*\(\s*(INSERT|UPDATE|DELETE|TRUNCATE)\b/i;
 
 const WHERE_DANGEROUS_PATTERNS = [
@@ -243,6 +268,18 @@ export function sanitizeQuery(query: string, mode: DatabaseMode): void {
   for (const pattern of DANGEROUS_PATTERNS) {
     if (pattern.test(trimmedQuery)) {
       throw new Error('Potentially dangerous query pattern detected');
+    }
+  }
+
+  for (const pattern of QUERY_DANGEROUS_FUNCTIONS) {
+    if (pattern.test(trimmedQuery)) {
+      throw new Error('Potentially dangerous function call detected');
+    }
+  }
+
+  for (const pattern of SENSITIVE_CATALOGS) {
+    if (pattern.test(trimmedQuery)) {
+      throw new Error('Access to sensitive system catalog is not allowed');
     }
   }
 
