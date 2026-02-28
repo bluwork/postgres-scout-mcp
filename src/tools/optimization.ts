@@ -969,8 +969,14 @@ export async function optimizeQuery(
     };
   }
 
-  // Get execution plan
-  const explainQuery = `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) ${query}`;
+  // Get execution plan — skip ANALYZE in read-only mode (it executes the query)
+  const isReadOnly = connection.config.mode === 'read-only';
+  const explainOptions = isReadOnly ? 'BUFFERS, FORMAT JSON' : 'ANALYZE, BUFFERS, FORMAT JSON';
+  const explainQuery = `EXPLAIN (${explainOptions}) ${query}`;
+
+  if (isReadOnly) {
+    logger.warn('optimizeQuery', 'Read-only mode: ANALYZE disabled, using estimated plan only');
+  }
 
   let planResult;
   try {

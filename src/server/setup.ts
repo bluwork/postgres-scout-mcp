@@ -9,6 +9,7 @@ import { DatabaseConnection, ServerConfig } from '../types.js';
 import { Logger } from '../utils/logger.js';
 import { RateLimiter } from '../utils/rate-limiter.js';
 import { tools, executeTool } from '../tools/index.js';
+import { sanitizeErrorMessage } from '../utils/sanitize.js';
 
 export function createMCPServer(
   connection: DatabaseConnection,
@@ -64,15 +65,15 @@ export function createMCPServer(
         ]
       };
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.error('mcp', `Error executing tool ${name}`, { error: errorMessage });
+      const rawMessage = error instanceof Error ? error.message : String(error);
+      logger.error('mcp', `Error executing tool ${name}`, { error: rawMessage });
 
       return {
         content: [
           {
             type: 'text',
             text: JSON.stringify({
-              error: errorMessage,
+              error: sanitizeErrorMessage(rawMessage),
               tool: name
             }, null, 2)
           }
