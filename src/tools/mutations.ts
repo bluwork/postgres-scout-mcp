@@ -34,6 +34,16 @@ const SafeUpdateSchema = z.object({
   allowEmptyWhere: z.boolean().optional().default(false)
 });
 
+const SafeInsertSchema = z.object({
+  table: z.string(),
+  schema: z.string().optional().default('public'),
+  columns: z.array(z.string()),
+  rows: z.array(z.string()),
+  dryRun: z.boolean().optional().default(false),
+  maxRows: z.number().optional().default(1000),
+  onConflict: z.enum(['error', 'skip']).optional().default('error'),
+});
+
 const SafeDeleteSchema = z.object({
   table: z.string(),
   schema: z.string().optional().default('public'),
@@ -404,6 +414,113 @@ export async function safeDelete(
   };
 }
 
+const INSERT_BATCH_SIZE = 500;
+
+export async function safeInsert(
+  connection: DatabaseConnection,
+  logger: Logger,
+  args: z.infer<typeof SafeInsertSchema>
+): Promise<any> {
+  const { table, schema, columns, rows, dryRun, maxRows: clientMaxRows, onConflict } = args;
+  const maxRows = clampMaxRows(clientMaxRows);
+
+  logger.info('safeInsert', 'Executing safe INSERT', { schema, table, dryRun });
+
+  // Validation guards
+  if (!columns.length) {
+    return { blocked: true, reason: 'No columns specified.' };
+  }
+
+  if (!rows.length) {
+    return { blocked: true, reason: 'No rows provided.' };
+  }
+
+  if (rows.length > maxRows) {
+    return {
+      blocked: true,
+      reason: `Row count (${rows.length}) exceeds maxRows limit (${maxRows}).`,
+    };
+  }
+
+  // Parse and validate each row
+  const parsedRows: any[][] = [];
+  for (let i = 0; i < rows.length; i++) {
+    let parsed: any[];
+    try {
+      parsed = JSON.parse(rows[i]);
+    } catch {
+      return { blocked: true, reason: `Invalid row JSON at index ${i}: ${rows[i]}` };
+    }
+    if (!Array.isArray(parsed)) {
+      return { blocked: true, reason: `Invalid row JSON at index ${i}: expected array` };
+    }
+    if (parsed.length !== columns.length) {
+      return {
+        blocked: true,
+        reason: `Row ${i} has ${parsed.length} values but ${columns.length} columns expected.`,
+      };
+    }
+    parsedRows.push(parsed);
+  }
+
+  const sanitizedSchema = sanitizeIdentifier(schema);
+  const sanitizedTable = sanitizeIdentifier(table);
+  const sanitizedColumns = columns.map(c => sanitizeIdentifier(c));
+
+  if (dryRun) {
+    return {
+      dryRun: true,
+      operation: 'INSERT',
+      table: `${schema}.${table}`,
+      wouldInsert: parsedRows.length,
+      columns,
+      sampleRows: parsedRows.slice(0, 5),
+    };
+  }
+
+  // Execute in batches
+  let totalInserted = 0;
+  const allReturnedRows: any[] = [];
+
+  for (let batchStart = 0; batchStart < parsedRows.length; batchStart += INSERT_BATCH_SIZE) {
+    const batch = parsedRows.slice(batchStart, batchStart + INSERT_BATCH_SIZE);
+
+    const valuePlaceholders: string[] = [];
+    const params: any[] = [];
+    let paramIndex = 1;
+
+    for (const row of batch) {
+      const rowPlaceholders: string[] = [];
+      for (const value of row) {
+        rowPlaceholders.push(`$${paramIndex}`);
+        params.push(value);
+        paramIndex++;
+      }
+      valuePlaceholders.push(`(${rowPlaceholders.join(', ')})`);
+    }
+
+    let query = `INSERT INTO ${sanitizedSchema}.${sanitizedTable} (${sanitizedColumns.join(', ')}) VALUES ${valuePlaceholders.join(', ')}`;
+
+    if (onConflict === 'skip') {
+      query += ' ON CONFLICT DO NOTHING';
+    }
+
+    query += ' RETURNING *';
+
+    const result = await executeQuery(connection, logger, { query, params });
+    totalInserted += result.rowCount || 0;
+    allReturnedRows.push(...result.rows);
+  }
+
+  return {
+    success: true,
+    operation: 'INSERT',
+    table: `${schema}.${table}`,
+    rowsInserted: totalInserted,
+    rows: allReturnedRows,
+  };
+}
+
 /** @internal Exposed for testing only */
 export function _testNormalizeWhereForSafety(where: string): boolean {
   const validation = validateWhereClause(where, false);
@@ -431,5 +548,9 @@ export const mutationTools = {
   safeDelete: {
     schema: SafeDeleteSchema,
     handler: safeDelete
+  },
+  safeInsert: {
+    schema: SafeInsertSchema,
+    handler: safeInsert
   }
 };
