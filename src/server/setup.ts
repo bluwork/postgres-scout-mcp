@@ -153,6 +153,7 @@ function getToolDescription(name: string, mode: string): string {
     previewDelete: 'Preview which rows would be deleted without actually deleting them',
     safeUpdate: 'Execute UPDATE with safety guards: dry-run mode, maxRows limit, empty WHERE protection. Raw SET strings require allowRawSet=true',
     safeDelete: 'Execute DELETE with safety guards: dry-run mode, maxRows limit, empty WHERE protection',
+    safeInsert: 'Execute INSERT with safety guards: dry-run mode, maxRows limit, parameterized values, row batching, ON CONFLICT support',
 
     // Live monitoring tools
     getLiveMetrics: 'Collect real-time database metrics over a time period with configurable intervals',
