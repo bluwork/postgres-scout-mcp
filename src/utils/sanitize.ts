@@ -36,7 +36,19 @@ const WHERE_DANGEROUS_PATTERNS = [
   /\*\//,
   /UNION\s+(ALL\s+)?SELECT/i,
   /INTO\s+(OUT|DUMP)FILE/i,
-  /LOAD_FILE\s*\(/i
+  /LOAD_FILE\s*\(/i,
+  /\bSELECT\b/i,
+  /\bEXECUTE\b/i,
+  /\bCOPY\b/i,
+  /\bpg_sleep\s*\(/i,
+  /\bpg_read_file\s*\(/i,
+  /\bpg_ls_dir\s*\(/i,
+  /\bpg_stat_file\s*\(/i,
+  /\blo_import\s*\(/i,
+  /\blo_export\s*\(/i,
+  /\bdblink\s*\(/i,
+  /\bcurrent_setting\s*\(/i,
+  /\bset_config\s*\(/i
 ];
 
 const ALLOWED_CTE_MAIN_OPERATIONS = ['SELECT', 'EXPLAIN'];
