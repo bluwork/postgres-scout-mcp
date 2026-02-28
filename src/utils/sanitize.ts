@@ -70,13 +70,38 @@ function skipDollarQuotedString(query: string, pos: number): number | null {
 
 function skipSingleQuotedString(query: string, pos: number): number | null {
   if (query[pos] !== "'") return null;
+
+  // Detect PostgreSQL E-string literals (E'...' with backslash escapes)
+  const isEString = pos > 0 && (query[pos - 1] === 'E' || query[pos - 1] === 'e') &&
+    (pos < 2 || !isWordChar(query[pos - 2]));
+
   let i = pos + 1;
   while (i < query.length) {
+    if (isEString && query[i] === '\\') {
+      i += 2; // skip backslash-escaped character
+      continue;
+    }
     if (query[i] === "'" && query[i + 1] === "'") {
-      i += 2; // escaped quote
+      i += 2; // doubled quote escape
       continue;
     }
     if (query[i] === "'") {
+      return i + 1;
+    }
+    i++;
+  }
+  return null; // unterminated
+}
+
+function skipDoubleQuotedIdentifier(query: string, pos: number): number | null {
+  if (query[pos] !== '"') return null;
+  let i = pos + 1;
+  while (i < query.length) {
+    if (query[i] === '"' && query[i + 1] === '"') {
+      i += 2; // escaped double quote
+      continue;
+    }
+    if (query[i] === '"') {
       return i + 1;
     }
     i++;
@@ -115,14 +140,14 @@ function extractMainStatementAfterCTEs(query: string): string | null {
     i = skipWhitespace(query, i);
 
     // Skip optional column list: cte(col1, col2)
-    if (i < len && query[i] === '(' && !findKeywordAt(query, i, 'AS')) {
-      // Check if this is a column list (before AS) or the CTE body (after AS)
-      // Look ahead: if AS hasn't been seen yet, this is a column list
+    if (i < len && query[i] === '(') {
       let depth = 1;
       i++; // skip opening (
       while (i < len && depth > 0) {
         const skipSQ = skipSingleQuotedString(query, i);
         if (skipSQ !== null) { i = skipSQ; continue; }
+        const skipDQI = skipDoubleQuotedIdentifier(query, i);
+        if (skipDQI !== null) { i = skipDQI; continue; }
         if (query[i] === '(') depth++;
         else if (query[i] === ')') depth--;
         if (depth > 0) i++;
@@ -153,14 +178,16 @@ function extractMainStatementAfterCTEs(query: string): string | null {
     // Expect opening ( of CTE body
     if (i >= len || query[i] !== '(') return null;
 
-    // Walk through CTE body tracking depth, handling strings
+    // Walk through CTE body tracking depth, handling strings and identifiers
     let depth = 1;
     i++; // skip opening (
     while (i < len && depth > 0) {
       const skipSQ = skipSingleQuotedString(query, i);
       if (skipSQ !== null) { i = skipSQ; continue; }
-      const skipDQ = skipDollarQuotedString(query, i);
-      if (skipDQ !== null) { i = skipDQ; continue; }
+      const skipDollar = skipDollarQuotedString(query, i);
+      if (skipDollar !== null) { i = skipDollar; continue; }
+      const skipDQI = skipDoubleQuotedIdentifier(query, i);
+      if (skipDQI !== null) { i = skipDQI; continue; }
       if (query[i] === '(') depth++;
       else if (query[i] === ')') depth--;
       if (depth > 0) i++;

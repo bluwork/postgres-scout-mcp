@@ -172,4 +172,44 @@ describe('sanitizeQuery: CTE with data-modifying main statement in read-only mod
       )
     ).toThrow();
   });
+
+  // --- E-string escape literals (review round 2, comment #1) ---
+
+  it('should allow CTE with E-string containing backslash-escaped quote followed by SELECT', () => {
+    expect(() =>
+      sanitizeQuery(
+        "WITH cte AS (SELECT E'it\\'s ) here' AS val) SELECT * FROM cte",
+        'read-only'
+      )
+    ).not.toThrow();
+  });
+
+  it('should reject CTE with E-string containing backslash-escaped quote followed by DELETE', () => {
+    expect(() =>
+      sanitizeQuery(
+        "WITH cte AS (SELECT E'\\') fake' AS val) DELETE FROM users",
+        'read-only'
+      )
+    ).toThrow();
+  });
+
+  // --- Double-quoted identifiers (review round 2, comments #2/#3) ---
+
+  it('should allow CTE with double-quoted identifier containing parens followed by SELECT', () => {
+    expect(() =>
+      sanitizeQuery(
+        'WITH cte AS (SELECT 1 AS ") SELECT (") SELECT * FROM cte',
+        'read-only'
+      )
+    ).not.toThrow();
+  });
+
+  it('should reject CTE with double-quoted identifier containing paren followed by DELETE', () => {
+    expect(() =>
+      sanitizeQuery(
+        'WITH cte AS (SELECT 1 AS ") SELECT ") DELETE FROM users',
+        'read-only'
+      )
+    ).toThrow();
+  });
 });
