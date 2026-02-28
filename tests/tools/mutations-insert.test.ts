@@ -107,4 +107,80 @@ describe('safeInsert', () => {
       expect(mockClient.query).not.toHaveBeenCalled();
     });
   });
+
+  describe('query building', () => {
+    it('builds correct parameterized INSERT query', async () => {
+      mockClient.query.mockResolvedValue({ rows: [{ id: 1, name: 'Alice', email: 'alice@example.com' }], rowCount: 1 });
+
+      const result = await safeInsert(connection, logger, {
+        table: 'users',
+        schema: 'public',
+        columns: ['name', 'email'],
+        rows: ['["Alice", "alice@example.com"]'],
+        dryRun: false,
+        maxRows: 1000,
+        onConflict: 'error' as const,
+      });
+
+      // Find the INSERT call (skip the SET statement_timeout call)
+      const calls = mockClient.query.mock.calls;
+      const insertCall = calls.find((c: any) =>
+        (typeof c[0] === 'object' ? c[0].text : c[0]).includes('INSERT')
+      );
+
+      expect(insertCall).toBeDefined();
+      const queryObj = insertCall![0];
+      expect(queryObj.text).toContain('INSERT INTO public.users');
+      expect(queryObj.text).toContain('(name, email)');
+      expect(queryObj.text).toContain('VALUES ($1, $2)');
+      expect(queryObj.text).toContain('RETURNING *');
+      expect(queryObj.text).not.toContain('ON CONFLICT');
+      expect(queryObj.values).toEqual(['Alice', 'alice@example.com']);
+
+      expect(result.success).toBe(true);
+      expect(result.rowsInserted).toBe(1);
+    });
+
+    it('adds ON CONFLICT DO NOTHING when onConflict is skip', async () => {
+      mockClient.query.mockResolvedValue({ rows: [], rowCount: 0 });
+
+      await safeInsert(connection, logger, {
+        table: 'users',
+        schema: 'public',
+        columns: ['name'],
+        rows: ['["Alice"]'],
+        dryRun: false,
+        maxRows: 1000,
+        onConflict: 'skip' as const,
+      });
+
+      const calls = mockClient.query.mock.calls;
+      const insertCall = calls.find((c: any) =>
+        (typeof c[0] === 'object' ? c[0].text : c[0]).includes('INSERT')
+      );
+
+      expect(insertCall).toBeDefined();
+      expect(insertCall![0].text).toContain('ON CONFLICT DO NOTHING');
+    });
+
+    it('batches rows in groups of 500', async () => {
+      mockClient.query.mockResolvedValue({ rows: [], rowCount: 250 });
+
+      const rows = Array.from({ length: 750 }, (_, i) => `["user${i}"]`);
+      await safeInsert(connection, logger, {
+        table: 'users',
+        schema: 'public',
+        columns: ['name'],
+        rows,
+        dryRun: false,
+        maxRows: 1000,
+        onConflict: 'error' as const,
+      });
+
+      const insertCalls = mockClient.query.mock.calls.filter((c: any) =>
+        (typeof c[0] === 'object' ? c[0].text : c[0]).includes('INSERT')
+      );
+      expect(insertCalls).toHaveLength(2);
+    });
+  });
 });
