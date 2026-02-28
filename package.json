@@ -15,7 +15,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "prepublishOnly": "npm run build",
-    "prepare": "chmod +x bin/cli.js"
+    "prepare": "npm run build"
   },
   "repository": {
     "type": "git",
@@ -50,6 +50,9 @@
     "database-health",
     "index-optimization"
   ],
+  "engines": {
+    "node": ">=20"
+  },
   "author": "Boban Lukic",
   "license": "ISC",
   "dependencies": {

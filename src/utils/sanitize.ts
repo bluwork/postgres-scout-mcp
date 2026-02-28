@@ -39,64 +39,147 @@ const WHERE_DANGEROUS_PATTERNS = [
   /LOAD_FILE\s*\(/i
 ];
 
-function extractMainStatementAfterCTEs(query: string): string | null {
-  let depth = 0;
-  let inSingleQuote = false;
-  let i = 0;
-  const upper = query.toUpperCase();
+const ALLOWED_CTE_MAIN_OPERATIONS = ['SELECT', 'EXPLAIN'];
 
-  // Skip past "WITH"
-  const withMatch = upper.match(/^\s*WITH\s+/i);
+function isWordChar(c: string): boolean {
+  return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c === '_';
+}
+
+function skipWhitespace(query: string, pos: number): number {
+  while (pos < query.length && /\s/.test(query[pos])) pos++;
+  return pos;
+}
+
+function skipDollarQuotedString(query: string, pos: number): number | null {
+  if (query[pos] !== '$') return null;
+
+  // Find the tag: $$ or $tag$
+  let tagEnd = pos + 1;
+  while (tagEnd < query.length && query[tagEnd] !== '$' && /[a-zA-Z0-9_]/.test(query[tagEnd])) {
+    tagEnd++;
+  }
+  if (tagEnd >= query.length || query[tagEnd] !== '$') return null;
+
+  const tag = query.substring(pos, tagEnd + 1); // e.g. "$$" or "$tag$"
+  const searchFrom = tagEnd + 1;
+  const closeIdx = query.indexOf(tag, searchFrom);
+  if (closeIdx === -1) return null; // unterminated
+
+  return closeIdx + tag.length;
+}
+
+function skipSingleQuotedString(query: string, pos: number): number | null {
+  if (query[pos] !== "'") return null;
+  let i = pos + 1;
+  while (i < query.length) {
+    if (query[i] === "'" && query[i + 1] === "'") {
+      i += 2; // escaped quote
+      continue;
+    }
+    if (query[i] === "'") {
+      return i + 1;
+    }
+    i++;
+  }
+  return null; // unterminated
+}
+
+function findKeywordAt(query: string, pos: number, keyword: string): boolean {
+  const upper = query.toUpperCase();
+  if (upper.substring(pos, pos + keyword.length) !== keyword) return false;
+  if (pos > 0 && isWordChar(query[pos - 1])) return false;
+  if (pos + keyword.length < query.length && isWordChar(query[pos + keyword.length])) return false;
+  return true;
+}
+
+function extractMainStatementAfterCTEs(query: string): string | null {
+  const len = query.length;
+  let i = 0;
+
+  // Skip past leading "WITH" (and optional "RECURSIVE")
+  const withMatch = query.match(/^\s*WITH\s+/i);
   if (!withMatch) return null;
   i = withMatch[0].length;
 
-  // Walk through CTE definitions, tracking parenthesis depth
-  // CTEs end when we reach depth 0 after a closing paren, followed by a non-comma keyword
-  while (i < query.length) {
-    const char = query[i];
+  i = skipWhitespace(query, i);
+  if (findKeywordAt(query, i, 'RECURSIVE')) {
+    i += 'RECURSIVE'.length;
+    i = skipWhitespace(query, i);
+  }
 
-    if (inSingleQuote) {
-      if (char === "'" && query[i + 1] === "'") {
-        i += 2; // escaped quote
-        continue;
+  // Process each CTE definition
+  while (i < len) {
+    // Skip CTE name (identifier)
+    i = skipWhitespace(query, i);
+    while (i < len && !(/\s/.test(query[i])) && query[i] !== '(' && query[i] !== ',') i++;
+    i = skipWhitespace(query, i);
+
+    // Skip optional column list: cte(col1, col2)
+    if (i < len && query[i] === '(' && !findKeywordAt(query, i, 'AS')) {
+      // Check if this is a column list (before AS) or the CTE body (after AS)
+      // Look ahead: if AS hasn't been seen yet, this is a column list
+      let depth = 1;
+      i++; // skip opening (
+      while (i < len && depth > 0) {
+        const skipSQ = skipSingleQuotedString(query, i);
+        if (skipSQ !== null) { i = skipSQ; continue; }
+        if (query[i] === '(') depth++;
+        else if (query[i] === ')') depth--;
+        if (depth > 0) i++;
       }
-      if (char === "'") {
-        inSingleQuote = false;
+      if (depth !== 0) return null; // unterminated column list
+      i++; // skip closing )
+      i = skipWhitespace(query, i);
+    }
+
+    // Expect AS keyword
+    if (!findKeywordAt(query, i, 'AS')) return null;
+    i += 2; // skip "AS"
+    i = skipWhitespace(query, i);
+
+    // Skip optional NOT MATERIALIZED / MATERIALIZED
+    if (findKeywordAt(query, i, 'NOT')) {
+      i += 3;
+      i = skipWhitespace(query, i);
+      if (findKeywordAt(query, i, 'MATERIALIZED')) {
+        i += 12;
+        i = skipWhitespace(query, i);
       }
-      i++;
+    } else if (findKeywordAt(query, i, 'MATERIALIZED')) {
+      i += 12;
+      i = skipWhitespace(query, i);
+    }
+
+    // Expect opening ( of CTE body
+    if (i >= len || query[i] !== '(') return null;
+
+    // Walk through CTE body tracking depth, handling strings
+    let depth = 1;
+    i++; // skip opening (
+    while (i < len && depth > 0) {
+      const skipSQ = skipSingleQuotedString(query, i);
+      if (skipSQ !== null) { i = skipSQ; continue; }
+      const skipDQ = skipDollarQuotedString(query, i);
+      if (skipDQ !== null) { i = skipDQ; continue; }
+      if (query[i] === '(') depth++;
+      else if (query[i] === ')') depth--;
+      if (depth > 0) i++;
+    }
+
+    if (depth !== 0) return null; // unterminated CTE body
+    i++; // skip closing )
+
+    i = skipWhitespace(query, i);
+
+    // Check for comma (another CTE follows)
+    if (i < len && query[i] === ',') {
+      i++; // skip comma
       continue;
     }
 
-    if (char === "'") {
-      inSingleQuote = true;
-      i++;
-      continue;
-    }
-
-    if (char === '(') {
-      depth++;
-      i++;
-      continue;
-    }
-
-    if (char === ')') {
-      depth--;
-      if (depth === 0) {
-        // After closing a CTE body at depth 0, look ahead for comma (another CTE) or main statement
-        const rest = query.substring(i + 1).trimStart();
-        if (rest.startsWith(',')) {
-          // Another CTE follows, skip the comma and continue
-          i = query.length - rest.length + 1;
-          continue;
-        }
-        // This is the main statement
-        return rest;
-      }
-      i++;
-      continue;
-    }
-
-    i++;
+    // No comma — what follows is the main statement
+    const rest = query.substring(i).trimStart();
+    return rest.length > 0 ? rest : null;
   }
 
   return null;
@@ -134,13 +217,16 @@ export function sanitizeQuery(query: string, mode: DatabaseMode): void {
 
   if (mode === 'read-only' && operation === 'WITH') {
     const mainStatement = extractMainStatementAfterCTEs(trimmedQuery);
-    if (mainStatement) {
-      const mainOp = mainStatement.split(/\s+/)[0].toUpperCase();
-      if (!ALLOWED_READ_ONLY_OPERATIONS.includes(mainOp)) {
-        throw new Error(
-          `Operation ${mainOp} not allowed in read-only mode. CTE queries must use a read-only main statement (SELECT, EXPLAIN).`
-        );
-      }
+    if (!mainStatement) {
+      throw new Error(
+        'Unable to determine main statement after CTEs; query not allowed in read-only mode.'
+      );
+    }
+    const mainOp = mainStatement.split(/\s+/)[0].toUpperCase();
+    if (!ALLOWED_CTE_MAIN_OPERATIONS.includes(mainOp)) {
+      throw new Error(
+        `Operation ${mainOp} not allowed in read-only mode. CTE queries must use a read-only main statement (${ALLOWED_CTE_MAIN_OPERATIONS.join(', ')}).`
+      );
     }
   }
 
