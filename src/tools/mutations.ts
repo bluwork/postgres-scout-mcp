@@ -2,7 +2,12 @@ import { z } from 'zod';
 import { DatabaseConnection } from '../types.js';
 import { Logger } from '../utils/logger.js';
 import { executeQuery } from '../utils/database.js';
-import { sanitizeIdentifier, validateUserWhereClause, validateRawSetClause } from '../utils/sanitize.js';
+import { sanitizeIdentifier, validateUserWhereClause, validateRawSetClause, parseIntSafe } from '../utils/sanitize.js';
+
+function clampMaxRows(clientMaxRows: number): number {
+  const serverMax = parseIntSafe(process.env.MAX_MUTATION_ROWS || '10000', 10000);
+  return Math.min(clientMaxRows, serverMax);
+}
 
 const PreviewUpdateSchema = z.object({
   table: z.string(),
@@ -227,7 +232,8 @@ export async function safeUpdate(
   logger: Logger,
   args: z.infer<typeof SafeUpdateSchema>
 ): Promise<any> {
-  const { table, schema, set, where, dryRun, maxRows, allowEmptyWhere, allowRawSet } = args;
+  const { table, schema, set, where, dryRun, maxRows: clientMaxRows, allowEmptyWhere, allowRawSet } = args;
+  const maxRows = clampMaxRows(clientMaxRows);
 
   logger.info('safeUpdate', 'Executing safe UPDATE', { schema, table, dryRun });
 
@@ -326,7 +332,8 @@ export async function safeDelete(
   logger: Logger,
   args: z.infer<typeof SafeDeleteSchema>
 ): Promise<any> {
-  const { table, schema, where, dryRun, maxRows, allowEmptyWhere } = args;
+  const { table, schema, where, dryRun, maxRows: clientMaxRows, allowEmptyWhere } = args;
+  const maxRows = clampMaxRows(clientMaxRows);
 
   logger.info('safeDelete', 'Executing safe DELETE', { schema, table, dryRun });
 
@@ -401,6 +408,11 @@ export async function safeDelete(
 export function _testNormalizeWhereForSafety(where: string): boolean {
   const validation = validateWhereClause(where, false);
   return !validation.valid;
+}
+
+/** @internal Exposed for testing only */
+export function _testClampMaxRows(maxRows: number): number {
+  return clampMaxRows(maxRows);
 }
 
 export const mutationTools = {
