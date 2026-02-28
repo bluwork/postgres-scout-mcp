@@ -87,4 +87,24 @@ describe('safeInsert', () => {
       expect(result.reason).toMatch(/1 values but 2 columns/);
     });
   });
+
+  describe('dry run', () => {
+    it('returns preview without calling executeQuery', async () => {
+      const result = await safeInsert(connection, logger, {
+        table: 'users',
+        schema: 'public',
+        columns: ['name', 'email'],
+        rows: ['["Alice", "alice@example.com"]', '["Bob", "bob@example.com"]'],
+        dryRun: true,
+        maxRows: 1000,
+        onConflict: 'error' as const,
+      });
+      expect(result.dryRun).toBe(true);
+      expect(result.operation).toBe('INSERT');
+      expect(result.wouldInsert).toBe(2);
+      expect(result.columns).toEqual(['name', 'email']);
+      expect(result.sampleRows).toHaveLength(2);
+      expect(mockClient.query).not.toHaveBeenCalled();
+    });
+  });
 });
