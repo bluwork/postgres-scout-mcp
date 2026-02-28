@@ -447,6 +447,6 @@ export function sanitizeErrorMessage(error: string): string {
 }
 
 export function sanitizeLogValue(value: any): string {
-  const str = typeof value === 'string' ? value : JSON.stringify(value);
+  const str = typeof value === 'string' ? value : (JSON.stringify(value) ?? '');
   return str.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\r\n\t]/g, ' ');
 }
