@@ -419,3 +419,31 @@ export function validateRawSetClause(set: string): void {
     throw new Error('Unbalanced quotes in SET clause');
   }
 }
+
+const PG_ERROR_CATEGORIES: Array<{ pattern: RegExp; message: (match: RegExpMatchArray) => string }> = [
+  { pattern: /syntax error/i, message: () => 'Query syntax error' },
+  { pattern: /statement timeout/i, message: () => 'Query timed out' },
+  { pattern: /permission denied/i, message: () => 'Permission denied' },
+  { pattern: /does not exist/i, message: () => 'Referenced object does not exist' },
+  { pattern: /already exists/i, message: () => 'Object already exists' },
+  { pattern: /duplicate key/i, message: () => 'Duplicate key violation' },
+  { pattern: /not-null/i, message: () => 'NOT NULL constraint violation' },
+  { pattern: /foreign key/i, message: () => 'Foreign key constraint violation' },
+  { pattern: /check constraint/i, message: () => 'Check constraint violation' },
+  { pattern: /deadlock detected/i, message: () => 'Deadlock detected' },
+  { pattern: /connection refused/i, message: () => 'Database connection refused' },
+  { pattern: /too many connections/i, message: () => 'Too many database connections' },
+  { pattern: /division by zero/i, message: () => 'Division by zero' },
+  { pattern: /invalid input/i, message: () => 'Invalid input value' },
+  { pattern: /out of range/i, message: () => 'Value out of range' },
+  { pattern: /cannot be cast/i, message: () => 'Type cast error' },
+];
+
+export function sanitizeErrorMessage(error: string): string {
+  for (const category of PG_ERROR_CATEGORIES) {
+    if (category.pattern.test(error)) {
+      return category.message(error.match(category.pattern)!);
+    }
+  }
+  return 'Database operation failed';
+}

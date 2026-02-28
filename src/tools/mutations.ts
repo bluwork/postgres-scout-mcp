@@ -38,7 +38,7 @@ const SafeDeleteSchema = z.object({
   allowEmptyWhere: z.boolean().optional().default(false)
 });
 
-function normalizeWhereForSafety(where: string): string {
+function isAlwaysTrueWhere(where: string): boolean {
   let normalized = where.trim().toLowerCase().replace(/\s+/g, '');
 
   // Strip wrapping parentheses like ((1=1))
@@ -46,17 +46,44 @@ function normalizeWhereForSafety(where: string): string {
     normalized = normalized.slice(1, -1).trim();
   }
 
-  return normalized;
+  if (normalized === '' || normalized === 'true' || normalized === 'notfalse') {
+    return true;
+  }
+
+  // Detect N=N numeric tautologies (1=1, 2=2, etc.)
+  if (/^\d+=\d+$/.test(normalized)) {
+    const [left, right] = normalized.split('=');
+    if (left === right) return true;
+  }
+
+  // Detect string tautologies ('a'='a', 'x'='x', etc.)
+  if (/^'[^']*'='[^']*'$/.test(normalized)) {
+    const match = normalized.match(/^('[^']*')=('[^']*')$/);
+    if (match && match[1] === match[2]) return true;
+  }
+
+  // Detect OR-based tautologies: split on OR before whitespace stripping
+  const lowerTrimmed = where.trim().toLowerCase();
+  const orBranches = lowerTrimmed.split(/\bor\b/);
+  if (orBranches.length > 1) {
+    for (const branch of orBranches) {
+      let b = branch.trim().replace(/\s+/g, '').replace(/^\(+|\)+$/g, '');
+      if (b === '1=1' || b === 'true' || b === 'notfalse') {
+        return true;
+      }
+      if (/^\d+=\d+$/.test(b)) {
+        const [l, r] = b.split('=');
+        if (l === r) return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 function validateWhereClause(where: string, allowEmpty: boolean): { valid: boolean; warning?: string } {
   const trimmed = where.trim();
-  const normalized = normalizeWhereForSafety(where);
-
-  const isAlwaysTrue =
-    normalized === '' ||
-    normalized === '1=1' ||
-    normalized === 'true';
+  const isAlwaysTrue = !trimmed || isAlwaysTrueWhere(where);
 
   if (!trimmed || isAlwaysTrue) {
     if (!allowEmpty) {
@@ -368,6 +395,12 @@ export async function safeDelete(
     message: getOperationWarning(result.rowCount || 0, 'DELETE'),
     whereWarning: validation.warning
   };
+}
+
+/** @internal Exposed for testing only */
+export function _testNormalizeWhereForSafety(where: string): boolean {
+  const validation = validateWhereClause(where, false);
+  return !validation.valid;
 }
 
 export const mutationTools = {

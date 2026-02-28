@@ -92,31 +92,40 @@ export async function findDuplicates(
   let duplicateGroupsWithRows = duplicateGroups;
 
   if (includeRows && duplicateGroups.length > 0) {
-    duplicateGroupsWithRows = await Promise.all(
-      duplicateGroups.map(async (group) => {
-        const whereConditions = sanitizedColumns.map((col, idx) => {
-          return `${escapeIdentifier(col)} = $${idx + 1}`;
-        }).join(' AND ');
+    // Process in batches of 5 to avoid exhausting the connection pool
+    const BATCH_SIZE = 5;
+    const results: any[] = [];
 
-        const rowsQuery = `
-          SELECT *
-          FROM ${escapeIdentifier(sanitizedSchema)}.${escapeIdentifier(sanitizedTable)}
-          WHERE ${whereConditions}
-          LIMIT 10
-        `;
+    for (let i = 0; i < duplicateGroups.length; i += BATCH_SIZE) {
+      const batch = duplicateGroups.slice(i, i + BATCH_SIZE);
+      const batchResults = await Promise.all(
+        batch.map(async (group) => {
+          const whereConditions = sanitizedColumns.map((col, idx) => {
+            return `${escapeIdentifier(col)} = $${idx + 1}`;
+          }).join(' AND ');
 
-        const params = sanitizedColumns.map(col => group[col]);
-        const rowsResult = await executeQuery(connection, logger, {
-          query: rowsQuery,
-          params
-        });
+          const rowsQuery = `
+            SELECT *
+            FROM ${escapeIdentifier(sanitizedSchema)}.${escapeIdentifier(sanitizedTable)}
+            WHERE ${whereConditions}
+            LIMIT 10
+          `;
 
-        return {
-          ...group,
-          rows: rowsResult.rows
-        };
-      })
-    );
+          const params = sanitizedColumns.map(col => group[col]);
+          const rowsResult = await executeQuery(connection, logger, {
+            query: rowsQuery,
+            params
+          });
+
+          return {
+            ...group,
+            rows: rowsResult.rows
+          };
+        })
+      );
+      results.push(...batchResults);
+    }
+    duplicateGroupsWithRows = results;
   }
 
   const totalDuplicateRows = duplicateGroups.reduce(
