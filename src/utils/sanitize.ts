@@ -3,8 +3,6 @@ import { DatabaseMode } from '../types.js';
 const ALLOWED_READ_ONLY_OPERATIONS = ['SELECT', 'EXPLAIN', 'WITH'];
 const ALLOWED_READ_WRITE_OPERATIONS = [
   'SELECT', 'INSERT', 'UPDATE', 'DELETE',
-  'CREATE', 'ALTER', 'DROP', 'TRUNCATE',
-  'VACUUM', 'ANALYZE', 'REINDEX',
   'EXPLAIN', 'WITH'
 ];
 
@@ -446,4 +444,9 @@ export function sanitizeErrorMessage(error: string): string {
     }
   }
   return 'Database operation failed';
+}
+
+export function sanitizeLogValue(value: any): string {
+  const str = typeof value === 'string' ? value : JSON.stringify(value);
+  return str.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\r\n\t]/g, ' ');
 }

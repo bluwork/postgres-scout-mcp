@@ -1,6 +1,7 @@
 import { writeFileSync, appendFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { LogEntry } from '../types.js';
+import { sanitizeLogValue } from './sanitize.js';
 
 export class Logger {
   private logDir: string;
@@ -30,8 +31,10 @@ export class Logger {
 
   private formatLogEntry(entry: LogEntry): string {
     const timestamp = entry.timestamp.toISOString();
-    const dataStr = entry.data ? `, Data: ${JSON.stringify(entry.data)}` : '';
-    return `${timestamp} [${entry.level.toUpperCase()}] Tool: ${entry.tool}, Message: ${entry.message}${dataStr}\n`;
+    const safeMessage = sanitizeLogValue(entry.message);
+    const safeTool = sanitizeLogValue(entry.tool);
+    const dataStr = entry.data ? `, Data: ${sanitizeLogValue(entry.data)}` : '';
+    return `${timestamp} [${entry.level.toUpperCase()}] Tool: ${safeTool}, Message: ${safeMessage}${dataStr}\n`;
   }
 
   private writeLog(filePath: string, content: string): void {

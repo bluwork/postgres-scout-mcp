@@ -39,7 +39,7 @@ export function createServerConfig(args: ParsedArgs): ServerConfig {
     connectionString: args.connectionString,
     queryTimeout: parseIntSafe(process.env.QUERY_TIMEOUT || '30000', 30000),
     maxResultRows: parseIntSafe(process.env.MAX_RESULT_ROWS || '10000', 10000),
-    enableRateLimit: process.env.ENABLE_RATE_LIMIT === 'true',
+    enableRateLimit: process.env.ENABLE_RATE_LIMIT !== 'false',
     rateLimitMaxRequests: parseIntSafe(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 100),
     rateLimitWindowMs: parseIntSafe(process.env.RATE_LIMIT_WINDOW_MS || '60000', 60000),
     logDir: process.env.LOG_DIR || './logs',
