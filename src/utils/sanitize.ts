@@ -26,6 +26,7 @@ const DANGEROUS_PATTERNS = [
 ];
 
 const QUERY_DANGEROUS_FUNCTIONS = [
+  // Filesystem access
   /\bpg_read_file\s*\(/i,
   /\bpg_read_binary_file\s*\(/i,
   /\bpg_ls_dir\s*\(/i,
@@ -34,12 +35,39 @@ const QUERY_DANGEROUS_FUNCTIONS = [
   /\bpg_ls_tmpdir\s*\(/i,
   /\bpg_ls_archive_statusdir\s*\(/i,
   /\bpg_stat_file\s*\(/i,
+  // Timing / sleep
   /\bpg_sleep\s*\(/i,
+  // Large object I/O
   /\blo_import\s*\(/i,
   /\blo_export\s*\(/i,
+  // Remote execution
   /\bdblink\s*\(/i,
+  // Configuration
   /\bcurrent_setting\s*\(/i,
   /\bset_config\s*\(/i,
+  // XML export (execute arbitrary SQL via string arguments)
+  /\bquery_to_xml\s*\(/i,
+  /\bquery_to_xml_and_xmlschema\s*\(/i,
+  /\btable_to_xml\s*\(/i,
+  /\btable_to_xml_and_xmlschema\s*\(/i,
+  /\bschema_to_xml\s*\(/i,
+  /\bschema_to_xml_and_xmlschema\s*\(/i,
+  /\bdatabase_to_xml\s*\(/i,
+  /\bdatabase_to_xml_and_xmlschema\s*\(/i,
+  /\bcursor_to_xml\s*\(/i,
+  // Process control (DoS)
+  /\bpg_terminate_backend\s*\(/i,
+  /\bpg_cancel_backend\s*\(/i,
+  /\bpg_reload_conf\s*\(/i,
+  /\bpg_rotate_logfile\s*\(/i,
+  // Resource abuse (advisory locks, notifications)
+  /\bpg_advisory_lock\s*\(/i,
+  /\bpg_advisory_lock_shared\s*\(/i,
+  /\bpg_try_advisory_lock\s*\(/i,
+  /\bpg_try_advisory_lock_shared\s*\(/i,
+  /\bpg_advisory_xact_lock\s*\(/i,
+  /\bpg_advisory_xact_lock_shared\s*\(/i,
+  /\bpg_notify\s*\(/i,
 ];
 
 const SENSITIVE_CATALOGS = [
@@ -48,6 +76,10 @@ const SENSITIVE_CATALOGS = [
   /\bpg_auth_members\b/i,
   /\bpg_hba_file_rules\b/i,
   /\bpg_file_settings\b/i,
+  /\bpg_roles\b/i,
+  /\bpg_stat_ssl\b/i,
+  /\bpg_largeobject\b/i,
+  /\bpg_largeobject_metadata\b/i,
 ];
 
 const CTE_DATA_MODIFYING_PATTERN = /\bAS\s+(NOT\s+)?MATERIALIZED\s*\(\s*(INSERT|UPDATE|DELETE|TRUNCATE)\b|\bAS\s*\(\s*(INSERT|UPDATE|DELETE|TRUNCATE)\b/i;

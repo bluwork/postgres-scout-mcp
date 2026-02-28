@@ -181,6 +181,206 @@ describe('sanitizeQuery: dangerous function blocking in queries', () => {
   });
 });
 
+describe('sanitizeQuery: XML function bypass blocking (VULN-007 through VULN-009)', () => {
+  // --- VULN-007: query_to_xml ---
+
+  it('should reject query_to_xml', () => {
+    expect(() =>
+      sanitizeQuery("SELECT query_to_xml('SELECT 1', true, true, '')", 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject query_to_xml with concat bypass', () => {
+    expect(() =>
+      sanitizeQuery("SELECT query_to_xml(concat('SEL','ECT 1'), true, true, '')", 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject query_to_xml_and_xmlschema', () => {
+    expect(() =>
+      sanitizeQuery("SELECT query_to_xml_and_xmlschema('SELECT 1', true, true, '')", 'read-only')
+    ).toThrow();
+  });
+
+  // --- VULN-008: table_to_xml ---
+
+  it('should reject table_to_xml', () => {
+    expect(() =>
+      sanitizeQuery("SELECT table_to_xml('users', true, true, '')", 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject table_to_xml_and_xmlschema', () => {
+    expect(() =>
+      sanitizeQuery("SELECT table_to_xml_and_xmlschema('users', true, true, '')", 'read-only')
+    ).toThrow();
+  });
+
+  // --- VULN-009: schema/database_to_xml ---
+
+  it('should reject schema_to_xml', () => {
+    expect(() =>
+      sanitizeQuery("SELECT schema_to_xml('public', true, true, '')", 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject schema_to_xml_and_xmlschema', () => {
+    expect(() =>
+      sanitizeQuery("SELECT schema_to_xml_and_xmlschema('public', true, true, '')", 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject database_to_xml', () => {
+    expect(() =>
+      sanitizeQuery("SELECT database_to_xml(true, true, '')", 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject database_to_xml_and_xmlschema', () => {
+    expect(() =>
+      sanitizeQuery("SELECT database_to_xml_and_xmlschema(true, true, '')", 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject cursor_to_xml', () => {
+    expect(() =>
+      sanitizeQuery("SELECT cursor_to_xml('my_cursor', 10, false, true, '')", 'read-only')
+    ).toThrow();
+  });
+
+  // --- Case insensitivity ---
+
+  it('should reject case-varied QUERY_TO_XML', () => {
+    expect(() =>
+      sanitizeQuery("SELECT QUERY_TO_XML('SELECT 1', true, true, '')", 'read-only')
+    ).toThrow();
+  });
+
+  // --- Also blocked in read-write mode ---
+
+  it('should reject query_to_xml in read-write mode', () => {
+    expect(() =>
+      sanitizeQuery("SELECT query_to_xml('SELECT 1', true, true, '')", 'read-write')
+    ).toThrow();
+  });
+
+  // --- Legitimate XML functions must still pass ---
+
+  it('should allow xmlelement', () => {
+    expect(() =>
+      sanitizeQuery("SELECT xmlelement(name foo, 'bar')", 'read-only')
+    ).not.toThrow();
+  });
+
+  it('should allow xmlforest', () => {
+    expect(() =>
+      sanitizeQuery("SELECT xmlforest(name, age) FROM users", 'read-only')
+    ).not.toThrow();
+  });
+
+  it('should allow xpath', () => {
+    expect(() =>
+      sanitizeQuery("SELECT xpath('/root/text()', '<root>hello</root>'::xml)", 'read-only')
+    ).not.toThrow();
+  });
+});
+
+describe('sanitizeQuery: process control and resource abuse blocking (VULN-010 through VULN-012)', () => {
+  // --- VULN-010: pg_terminate_backend / pg_cancel_backend ---
+
+  it('should reject pg_terminate_backend', () => {
+    expect(() =>
+      sanitizeQuery("SELECT pg_terminate_backend(12345)", 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject pg_cancel_backend', () => {
+    expect(() =>
+      sanitizeQuery("SELECT pg_cancel_backend(12345)", 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject pg_reload_conf', () => {
+    expect(() =>
+      sanitizeQuery("SELECT pg_reload_conf()", 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject pg_rotate_logfile', () => {
+    expect(() =>
+      sanitizeQuery("SELECT pg_rotate_logfile()", 'read-only')
+    ).toThrow();
+  });
+
+  // --- VULN-011: advisory locks ---
+
+  it('should reject pg_advisory_lock', () => {
+    expect(() =>
+      sanitizeQuery("SELECT pg_advisory_lock(12345)", 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject pg_advisory_lock_shared', () => {
+    expect(() =>
+      sanitizeQuery("SELECT pg_advisory_lock_shared(12345)", 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject pg_try_advisory_lock', () => {
+    expect(() =>
+      sanitizeQuery("SELECT pg_try_advisory_lock(12345)", 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject pg_try_advisory_lock_shared', () => {
+    expect(() =>
+      sanitizeQuery("SELECT pg_try_advisory_lock_shared(12345)", 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject pg_advisory_xact_lock', () => {
+    expect(() =>
+      sanitizeQuery("SELECT pg_advisory_xact_lock(12345)", 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject pg_advisory_xact_lock_shared', () => {
+    expect(() =>
+      sanitizeQuery("SELECT pg_advisory_xact_lock_shared(12345)", 'read-only')
+    ).toThrow();
+  });
+
+  // --- VULN-012: pg_notify ---
+
+  it('should reject pg_notify', () => {
+    expect(() =>
+      sanitizeQuery("SELECT pg_notify('channel', 'payload')", 'read-only')
+    ).toThrow();
+  });
+
+  // --- Process control blocked in read-write mode too ---
+
+  it('should reject pg_terminate_backend in read-write mode', () => {
+    expect(() =>
+      sanitizeQuery("SELECT pg_terminate_backend(12345)", 'read-write')
+    ).toThrow();
+  });
+
+  // --- Legitimate functions must still pass ---
+
+  it('should allow pg_backend_pid', () => {
+    expect(() =>
+      sanitizeQuery("SELECT pg_backend_pid()", 'read-only')
+    ).not.toThrow();
+  });
+
+  it('should allow pg_stat_get_activity', () => {
+    expect(() =>
+      sanitizeQuery("SELECT * FROM pg_stat_get_activity(pg_backend_pid())", 'read-only')
+    ).not.toThrow();
+  });
+});
+
 describe('sanitizeQuery: sensitive system catalog blocking', () => {
   // --- VULN-003: pg_shadow ---
 
@@ -278,5 +478,31 @@ describe('sanitizeQuery: sensitive system catalog blocking', () => {
     expect(() =>
       sanitizeQuery("SELECT * FROM user_shadow_copies", 'read-only')
     ).not.toThrow();
+  });
+
+  // --- Additional sensitive catalogs (VULN-015, VULN-018) ---
+
+  it('should reject pg_roles', () => {
+    expect(() =>
+      sanitizeQuery("SELECT rolname, rolsuper FROM pg_roles", 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject pg_stat_ssl', () => {
+    expect(() =>
+      sanitizeQuery("SELECT * FROM pg_stat_ssl", 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject pg_largeobject', () => {
+    expect(() =>
+      sanitizeQuery("SELECT * FROM pg_largeobject", 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject pg_largeobject_metadata', () => {
+    expect(() =>
+      sanitizeQuery("SELECT * FROM pg_largeobject_metadata", 'read-only')
+    ).toThrow();
   });
 });
