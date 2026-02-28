@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { DatabaseConnection } from '../types.js';
 import { Logger } from '../utils/logger.js';
 import { executeQuery } from '../utils/database.js';
-import { sanitizeIdentifier, validateUserWhereClause } from '../utils/sanitize.js';
+import { sanitizeIdentifier, validateUserWhereClause, validateRawSetClause } from '../utils/sanitize.js';
 
 const PreviewUpdateSchema = z.object({
   table: z.string(),
@@ -262,6 +262,7 @@ export async function safeUpdate(
     if (!allowRawSet) {
       throw new Error('Raw SET strings are disabled by default. Provide an object or set allowRawSet=true.');
     }
+    validateRawSetClause(set);
     setClause = set;
   } else {
     const setClauses: string[] = [];
