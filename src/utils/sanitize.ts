@@ -39,6 +39,69 @@ const WHERE_DANGEROUS_PATTERNS = [
   /LOAD_FILE\s*\(/i
 ];
 
+function extractMainStatementAfterCTEs(query: string): string | null {
+  let depth = 0;
+  let inSingleQuote = false;
+  let i = 0;
+  const upper = query.toUpperCase();
+
+  // Skip past "WITH"
+  const withMatch = upper.match(/^\s*WITH\s+/i);
+  if (!withMatch) return null;
+  i = withMatch[0].length;
+
+  // Walk through CTE definitions, tracking parenthesis depth
+  // CTEs end when we reach depth 0 after a closing paren, followed by a non-comma keyword
+  while (i < query.length) {
+    const char = query[i];
+
+    if (inSingleQuote) {
+      if (char === "'" && query[i + 1] === "'") {
+        i += 2; // escaped quote
+        continue;
+      }
+      if (char === "'") {
+        inSingleQuote = false;
+      }
+      i++;
+      continue;
+    }
+
+    if (char === "'") {
+      inSingleQuote = true;
+      i++;
+      continue;
+    }
+
+    if (char === '(') {
+      depth++;
+      i++;
+      continue;
+    }
+
+    if (char === ')') {
+      depth--;
+      if (depth === 0) {
+        // After closing a CTE body at depth 0, look ahead for comma (another CTE) or main statement
+        const rest = query.substring(i + 1).trimStart();
+        if (rest.startsWith(',')) {
+          // Another CTE follows, skip the comma and continue
+          i = query.length - rest.length + 1;
+          continue;
+        }
+        // This is the main statement
+        return rest;
+      }
+      i++;
+      continue;
+    }
+
+    i++;
+  }
+
+  return null;
+}
+
 export function sanitizeQuery(query: string, mode: DatabaseMode): void {
   const trimmedQuery = query.trim();
 
@@ -67,6 +130,18 @@ export function sanitizeQuery(query: string, mode: DatabaseMode): void {
     throw new Error(
       'Data-modifying statements (INSERT, UPDATE, DELETE, TRUNCATE) are not allowed within CTEs in read-only mode'
     );
+  }
+
+  if (mode === 'read-only' && operation === 'WITH') {
+    const mainStatement = extractMainStatementAfterCTEs(trimmedQuery);
+    if (mainStatement) {
+      const mainOp = mainStatement.split(/\s+/)[0].toUpperCase();
+      if (!ALLOWED_READ_ONLY_OPERATIONS.includes(mainOp)) {
+        throw new Error(
+          `Operation ${mainOp} not allowed in read-only mode. CTE queries must use a read-only main statement (SELECT, EXPLAIN).`
+        );
+      }
+    }
   }
 
   if (trimmedQuery.includes(';') && trimmedQuery.indexOf(';') !== trimmedQuery.length - 1) {
