@@ -394,3 +394,28 @@ export function parseIntSafe(value: string, defaultValue: number): number {
   }
   return parsed;
 }
+
+export function validateRawSetClause(set: string): void {
+  if (!set || !set.trim()) {
+    throw new Error('SET clause cannot be empty');
+  }
+
+  const trimmed = set.trim();
+
+  for (const pattern of WHERE_DANGEROUS_PATTERNS) {
+    if (pattern.test(trimmed)) {
+      throw new Error('Potentially dangerous pattern detected in SET clause');
+    }
+  }
+
+  const openParens = (trimmed.match(/\(/g) || []).length;
+  const closeParens = (trimmed.match(/\)/g) || []).length;
+  if (openParens !== closeParens) {
+    throw new Error('Unbalanced parentheses in SET clause');
+  }
+
+  const singleQuotes = (trimmed.match(/'/g) || []).length;
+  if (singleQuotes % 2 !== 0) {
+    throw new Error('Unbalanced quotes in SET clause');
+  }
+}
