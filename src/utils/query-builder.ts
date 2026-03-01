@@ -1,80 +1,40 @@
-import { escapeIdentifier, sanitizeIdentifier } from './sanitize.js';
+import { sanitizeIdentifier, escapeIdentifier } from './sanitize.js';
 
-export interface SelectOptions {
-  schema?: string;
-  columns?: string[];
-  where?: string;
-  orderBy?: string;
-  limit?: number;
-  offset?: number;
+// --- Types ---
+
+export type ComparisonOp = '=' | '!=' | '>' | '<' | '>=' | '<=' | 'LIKE' | 'ILIKE';
+
+export type WhereCondition =
+  | { field: string; op: ComparisonOp; value: string | number | boolean }
+  | { field: string; op: 'IN'; value: (string | number)[] }
+  | { field: string; op: 'NOT IN'; value: (string | number)[] }
+  | { field: string; op: 'IS NULL' }
+  | { field: string; op: 'IS NOT NULL' }
+  | { field: string; op: 'BETWEEN'; value: [string | number, string | number] }
+  | { and: WhereCondition[] }
+  | { or: WhereCondition[] };
+
+export interface WhereClauseResult {
+  clause: string;
+  params: any[];
 }
 
-export function buildSelectQuery(table: string, options: SelectOptions = {}): string {
-  const {
-    schema = 'public',
-    columns = ['*'],
-    where,
-    orderBy,
-    limit,
-    offset
-  } = options;
+// --- Builder (stub — returns wrong output for TDD red phase) ---
 
-  const sanitizedSchema = sanitizeIdentifier(schema);
-  const sanitizedTable = sanitizeIdentifier(table);
-  const sanitizedColumns = columns.map(col =>
-    col === '*' ? '*' : escapeIdentifier(sanitizeIdentifier(col))
-  );
-
-  const parts = [
-    'SELECT',
-    sanitizedColumns.join(', '),
-    'FROM',
-    `${escapeIdentifier(sanitizedSchema)}.${escapeIdentifier(sanitizedTable)}`
-  ];
-
-  if (where) {
-    parts.push('WHERE', where);
-  }
-
-  if (orderBy) {
-    parts.push('ORDER BY', orderBy);
-  }
-
-  if (limit !== undefined) {
-    parts.push(`LIMIT ${parseInt(String(limit), 10)}`);
-  }
-
-  if (offset !== undefined) {
-    parts.push(`OFFSET ${parseInt(String(offset), 10)}`);
-  }
-
-  return parts.join(' ');
+export function buildWhereClause(
+  conditions: WhereCondition[],
+  startParam: number = 1
+): WhereClauseResult {
+  return { clause: '', params: [] };
 }
 
-export function buildCountQuery(table: string, schema: string = 'public', where?: string): string {
-  const sanitizedSchema = sanitizeIdentifier(schema);
-  const sanitizedTable = sanitizeIdentifier(table);
-
-  const parts = [
-    'SELECT COUNT(*) as count',
-    'FROM',
-    `${escapeIdentifier(sanitizedSchema)}.${escapeIdentifier(sanitizedTable)}`
-  ];
-
-  if (where) {
-    parts.push('WHERE', where);
-  }
-
-  return parts.join(' ');
-}
+// --- Formatting utilities (unchanged) ---
 
 export function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 Bytes';
-
   const k = 1024;
   const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
