@@ -10,6 +10,7 @@ import { Logger } from '../utils/logger.js';
 import { RateLimiter } from '../utils/rate-limiter.js';
 import { tools, executeTool } from '../tools/index.js';
 import { sanitizeErrorMessage } from '../utils/sanitize.js';
+import { zodToJsonSchema } from '../utils/zod-to-json-schema.js';
 
 export function createMCPServer(
   connection: DatabaseConnection,
@@ -162,53 +163,4 @@ function getToolDescription(name: string, mode: string): string {
   };
 
   return descriptions[name] || `Execute ${name} operation`;
-}
-
-function zodToJsonSchema(schema: any): any {
-  const shape = schema._def?.shape?.() || {};
-  const properties: Record<string, any> = {};
-  const required: string[] = [];
-
-  for (const [key, value] of Object.entries(shape)) {
-    const field = value as any;
-    properties[key] = convertZodType(field);
-
-    if (!field._def?.defaultValue) {
-      required.push(key);
-    }
-  }
-
-  return {
-    type: 'object',
-    properties,
-    required: required.length > 0 ? required : undefined
-  };
-}
-
-function convertZodType(zodType: any): any {
-  const typeName = zodType._def?.typeName;
-
-  switch (typeName) {
-    case 'ZodString':
-      return { type: 'string' };
-    case 'ZodNumber':
-      return { type: 'number' };
-    case 'ZodBoolean':
-      return { type: 'boolean' };
-    case 'ZodArray':
-      return {
-        type: 'array',
-        items: convertZodType(zodType._def?.type)
-      };
-    case 'ZodEnum':
-      return { type: 'string', enum: zodType._def?.values || [] };
-    case 'ZodOptional':
-      return convertZodType(zodType._def?.innerType);
-    case 'ZodDefault':
-      const inner = convertZodType(zodType._def?.innerType);
-      inner.default = zodType._def?.defaultValue;
-      return inner;
-    default:
-      return { type: 'string' };
-  }
 }
