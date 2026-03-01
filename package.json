@@ -1,22 +1,33 @@
 {
   "name": "postgres-scout-mcp",
-  "version": "0.1.0",
-  "description": "Production-ready Model Context Protocol server for safe PostgreSQL database interaction",
-  "type": "module",
+  "version": "1.0.0",
+  "description": "Scout your PostgreSQL databases with AI - A production-ready MCP server with safety features, monitoring, and data quality tools",
   "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsc --watch",
+    "watch": "tsc --watch",
+    "prepublishOnly": "pnpm run build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepare": "chmod +x bin/cli.js"
+  },
   "bin": {
     "postgres-scout-mcp": "./bin/cli.js",
     "postgres-scout": "./bin/cli.js"
   },
-  "scripts": {
-    "build": "tsc",
-    "watch": "tsc --watch",
-    "dev": "tsc --watch",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "prepublishOnly": "npm run build",
-    "prepare": "npm run build"
-  },
+  "keywords": [
+    "postgresql",
+    "mcp",
+    "model-context-protocol",
+    "ai-assistant",
+    "claude",
+    "database"
+  ],
+  "author": "Boban Lukic",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/bluwork/postgres-scout-mcp"
@@ -30,31 +41,9 @@
     "README.md",
     "LICENSE"
   ],
-  "keywords": [
-    "mcp",
-    "model-context-protocol",
-    "postgres",
-    "postgresql",
-    "database",
-    "sql",
-    "ai",
-    "llm",
-    "claude",
-    "anthropic",
-    "database-monitoring",
-    "query-optimization",
-    "schema-analysis",
-    "data-quality",
-    "database-explorer",
-    "sql-analysis",
-    "database-health",
-    "index-optimization"
-  ],
   "engines": {
     "node": "^20.19.0 || >=22.12.0"
   },
-  "author": "Boban Lukic",
-  "license": "ISC",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.21.1",
     "pg": "^8.11.3",
