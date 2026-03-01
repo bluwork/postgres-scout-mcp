@@ -2,7 +2,8 @@ import { z } from 'zod';
 import { DatabaseConnection } from '../types.js';
 import { Logger } from '../utils/logger.js';
 import { executeQuery } from '../utils/database.js';
-import { escapeIdentifier, sanitizeIdentifier, validateUserWhereClause } from '../utils/sanitize.js';
+import { escapeIdentifier, sanitizeIdentifier } from '../utils/sanitize.js';
+import { WhereConditionSchema, buildWhereClause } from '../utils/query-builder.js';
 
 const ExportTableSchema = z.object({
   table: z.string(),
@@ -11,7 +12,7 @@ const ExportTableSchema = z.object({
     z.enum(['csv', 'json', 'jsonl', 'sql'])
   ),
   schema: z.string().optional().default('public'),
-  where: z.string().optional(),
+  where: z.array(WhereConditionSchema).optional(),
   columns: z.array(z.string()).optional(),
   limit: z.number().optional().default(10000),
   includeHeaders: z.boolean().optional().default(true)
@@ -20,7 +21,7 @@ const ExportTableSchema = z.object({
 const GenerateInsertStatementsSchema = z.object({
   table: z.string(),
   schema: z.string().optional().default('public'),
-  where: z.string().optional(),
+  where: z.array(WhereConditionSchema).optional(),
   batchSize: z.number().optional().default(100),
   includeSchema: z.boolean().optional().default(true),
   limit: z.number().optional().default(1000)
@@ -35,10 +36,6 @@ export async function exportTable(
 
   logger.info('exportTable', 'Exporting table data', { table, format });
 
-  if (where) {
-    validateUserWhereClause(where);
-  }
-
   const sanitizedSchema = sanitizeIdentifier(schema);
   const sanitizedTable = sanitizeIdentifier(table);
 
@@ -46,7 +43,14 @@ export async function exportTable(
     ? columns.map(sanitizeIdentifier).map(escapeIdentifier).join(', ')
     : '*';
 
-  const whereClause = where ? `WHERE ${where}` : '';
+  let whereClause = '';
+  let queryParams: any[] = [limit];
+
+  if (where && where.length > 0) {
+    const built = buildWhereClause(where, 2); // $1 is limit
+    whereClause = `WHERE ${built.clause}`;
+    queryParams = [limit, ...built.params];
+  }
 
   const query = `
     SELECT ${columnList}
@@ -58,7 +62,7 @@ export async function exportTable(
   const startTime = Date.now();
   const result = await executeQuery(connection, logger, {
     query,
-    params: [limit]
+    params: queryParams
   });
   const executionTimeMs = Date.now() - startTime;
 
@@ -115,10 +119,6 @@ export async function generateInsertStatements(
 
   logger.info('generateInsertStatements', 'Generating INSERT statements', { table });
 
-  if (where) {
-    validateUserWhereClause(where);
-  }
-
   const sanitizedSchema = sanitizeIdentifier(schema);
   const sanitizedTable = sanitizeIdentifier(table);
 
@@ -137,7 +137,14 @@ export async function generateInsertStatements(
 
   const columns = columnsResult.rows.map(row => row.column_name);
 
-  const whereClause = where ? `WHERE ${where}` : '';
+  let whereClause = '';
+  let dataQueryParams: any[] = [limit];
+
+  if (where && where.length > 0) {
+    const built = buildWhereClause(where, 2); // $1 is limit
+    whereClause = `WHERE ${built.clause}`;
+    dataQueryParams = [limit, ...built.params];
+  }
 
   const dataQuery = `
     SELECT *
@@ -148,7 +155,7 @@ export async function generateInsertStatements(
 
   const dataResult = await executeQuery(connection, logger, {
     query: dataQuery,
-    params: [limit]
+    params: dataQueryParams
   });
 
   const statements: string[] = [];
