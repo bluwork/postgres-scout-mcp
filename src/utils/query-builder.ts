@@ -50,6 +50,9 @@ function buildCondition(
   }
 
   if (condition.op === 'IN' || condition.op === 'NOT IN') {
+    if (condition.value.length === 0) {
+      throw new Error(`${condition.op} requires at least one value`);
+    }
     const placeholders = condition.value.map(v => {
       params.push(v);
       return `$${paramCounter.value++}`;
