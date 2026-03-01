@@ -1,4 +1,5 @@
 import { sanitizeIdentifier, escapeIdentifier } from './sanitize.js';
+import { z } from 'zod';
 
 // --- Types ---
 
@@ -13,6 +14,46 @@ export type WhereCondition =
   | { field: string; op: 'BETWEEN'; value: [string | number, string | number] }
   | { and: WhereCondition[] }
   | { or: WhereCondition[] };
+
+const ComparisonOpSchema = z.enum(['=', '!=', '>', '<', '>=', '<=', 'LIKE', 'ILIKE']);
+
+const ComparisonConditionSchema = z.object({
+  field: z.string(),
+  op: ComparisonOpSchema,
+  value: z.union([z.string(), z.number(), z.boolean()])
+});
+
+const InConditionSchema = z.object({
+  field: z.string(),
+  op: z.enum(['IN', 'NOT IN']),
+  value: z.array(z.union([z.string(), z.number()])).min(1)
+});
+
+const NullConditionSchema = z.object({
+  field: z.string(),
+  op: z.enum(['IS NULL', 'IS NOT NULL'])
+});
+
+const BetweenConditionSchema = z.object({
+  field: z.string(),
+  op: z.literal('BETWEEN'),
+  value: z.tuple([z.union([z.string(), z.number()]), z.union([z.string(), z.number()])])
+});
+
+const LeafConditionSchema = z.union([
+  ComparisonConditionSchema,
+  InConditionSchema,
+  NullConditionSchema,
+  BetweenConditionSchema
+]);
+
+export const WhereConditionSchema: z.ZodType<WhereCondition> = z.lazy(() =>
+  z.union([
+    LeafConditionSchema,
+    z.object({ and: z.array(WhereConditionSchema).min(1) }),
+    z.object({ or: z.array(WhereConditionSchema).min(1) })
+  ])
+);
 
 export interface WhereClauseResult {
   clause: string;

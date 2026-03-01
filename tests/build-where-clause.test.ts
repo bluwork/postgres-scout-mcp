@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildWhereClause, WhereCondition } from '../src/utils/query-builder.js';
+import { buildWhereClause, WhereCondition, WhereConditionSchema } from '../src/utils/query-builder.js';
 
 describe('buildWhereClause: comparison operators', () => {
   it('should build simple equality condition', () => {
@@ -281,5 +281,65 @@ describe('buildWhereClause: edge cases', () => {
     const result = buildWhereClause(conditions);
     expect(result.clause).toBe('"x" = $1');
     expect(result.params).toEqual([1]);
+  });
+});
+
+describe('WhereConditionSchema: Zod validation', () => {
+  it('should accept a valid comparison condition', () => {
+    const result = WhereConditionSchema.safeParse({ field: 'id', op: '=', value: 1 });
+    expect(result.success).toBe(true);
+  });
+
+  it('should accept a valid IN condition', () => {
+    const result = WhereConditionSchema.safeParse({ field: 'status', op: 'IN', value: ['a', 'b'] });
+    expect(result.success).toBe(true);
+  });
+
+  it('should accept IS NULL condition', () => {
+    const result = WhereConditionSchema.safeParse({ field: 'deleted_at', op: 'IS NULL' });
+    expect(result.success).toBe(true);
+  });
+
+  it('should accept BETWEEN condition', () => {
+    const result = WhereConditionSchema.safeParse({ field: 'price', op: 'BETWEEN', value: [10, 50] });
+    expect(result.success).toBe(true);
+  });
+
+  it('should accept nested AND/OR', () => {
+    const result = WhereConditionSchema.safeParse({
+      or: [
+        { field: 'a', op: '=', value: 1 },
+        { and: [
+          { field: 'b', op: '>', value: 2 },
+          { field: 'c', op: 'IS NULL' }
+        ]}
+      ]
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('should reject invalid operator', () => {
+    const result = WhereConditionSchema.safeParse({ field: 'id', op: 'DROP', value: 1 });
+    expect(result.success).toBe(false);
+  });
+
+  it('should reject missing field', () => {
+    const result = WhereConditionSchema.safeParse({ op: '=', value: 1 });
+    expect(result.success).toBe(false);
+  });
+
+  it('should reject IN with non-array value', () => {
+    const result = WhereConditionSchema.safeParse({ field: 'id', op: 'IN', value: 'not-array' });
+    expect(result.success).toBe(false);
+  });
+
+  it('should reject BETWEEN with wrong-length array', () => {
+    const result = WhereConditionSchema.safeParse({ field: 'id', op: 'BETWEEN', value: [1] });
+    expect(result.success).toBe(false);
+  });
+
+  it('should reject empty object', () => {
+    const result = WhereConditionSchema.safeParse({});
+    expect(result.success).toBe(false);
   });
 });
