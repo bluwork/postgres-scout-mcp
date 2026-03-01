@@ -60,6 +60,67 @@ export interface WhereClauseResult {
   params: any[];
 }
 
+// --- Trivially-true condition detection ---
+
+const MAX_SAFE_BETWEEN_RANGE = 1_000_000_000; // 1 billion — any range wider than this is suspicious
+
+function checkLeafTriviallyTrue(condition: WhereCondition): void {
+  if ('and' in condition) {
+    for (const c of condition.and) checkLeafTriviallyTrue(c);
+    return;
+  }
+  if ('or' in condition) {
+    for (const c of condition.or) checkLeafTriviallyTrue(c);
+    return;
+  }
+
+  // LIKE/ILIKE '%' or '%%'
+  if ((condition.op === 'LIKE' || condition.op === 'ILIKE') && 'value' in condition) {
+    const val = String(condition.value);
+    if (/^%+$/.test(val)) {
+      throw new Error(
+        `Trivially true condition detected: ${condition.op} '${val}' matches all rows. Use a more specific pattern.`
+      );
+    }
+  }
+
+  // BETWEEN with extreme numeric range
+  if (condition.op === 'BETWEEN' && 'value' in condition) {
+    const [low, high] = condition.value;
+    if (typeof low === 'number' && typeof high === 'number') {
+      const range = high - low;
+      if (range >= MAX_SAFE_BETWEEN_RANGE) {
+        throw new Error(
+          `Trivially true condition detected: BETWEEN ${low} AND ${high} spans ${range.toLocaleString()} values. Use a narrower range.`
+        );
+      }
+    }
+  }
+}
+
+function assertNotTriviallyTrue(conditions: WhereCondition[]): void {
+  // Flatten: if there's exactly one top-level condition and it's an AND group, unwrap it
+  let effective = conditions;
+  if (effective.length === 1 && 'and' in effective[0]) {
+    effective = effective[0].and;
+  }
+
+  // Check: sole IS NOT NULL
+  if (effective.length === 1) {
+    const c = effective[0];
+    if ('op' in c && c.op === 'IS NOT NULL') {
+      throw new Error(
+        'Trivially true condition detected: IS NOT NULL as the sole WHERE condition matches all non-null rows. Add additional conditions to narrow the scope.'
+      );
+    }
+  }
+
+  // Recursively check all leaf conditions for trivially-true patterns
+  for (const condition of effective) {
+    checkLeafTriviallyTrue(condition);
+  }
+}
+
 // --- Builder ---
 
 function buildCondition(
@@ -122,6 +183,8 @@ export function buildWhereClause(
   if (conditions.length === 0) {
     return { clause: '', params: [] };
   }
+
+  assertNotTriviallyTrue(conditions);
 
   const params: any[] = [];
   const paramCounter = { value: startParam };

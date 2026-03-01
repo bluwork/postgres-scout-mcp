@@ -2,14 +2,15 @@ import { z } from 'zod';
 import { DatabaseConnection } from '../types.js';
 import { Logger } from '../utils/logger.js';
 import { executeQuery } from '../utils/database.js';
-import { escapeIdentifier, sanitizeIdentifier, validateUserWhereClause, validateInterval, validateOrderBy } from '../utils/sanitize.js';
+import { escapeIdentifier, sanitizeIdentifier, validateInterval, validateOrderBy } from '../utils/sanitize.js';
+import { WhereConditionSchema, buildWhereClause } from '../utils/query-builder.js';
 
 const FindRecentSchema = z.object({
   table: z.string(),
   timestampColumn: z.string(),
   timeWindow: z.string().describe('PostgreSQL interval format, e.g., "7 days", "2 hours", "30 minutes"'),
   schema: z.string().optional().default('public'),
-  where: z.string().optional(),
+  where: z.array(WhereConditionSchema).optional(),
   limit: z.number().optional().default(100),
   orderBy: z.string().optional()
 });
@@ -46,9 +47,6 @@ export async function findRecent(
   logger.info('findRecent', 'Finding recent records', { table, timeWindow });
 
   validateInterval(timeWindow);
-  if (where) {
-    validateUserWhereClause(where);
-  }
   if (orderBy) {
     validateOrderBy(orderBy);
   }
@@ -57,7 +55,21 @@ export async function findRecent(
   const sanitizedTable = sanitizeIdentifier(table);
   const sanitizedTimestamp = sanitizeIdentifier(timestampColumn);
 
-  const whereClause = where ? `AND (${where})` : '';
+  let whereClause = '';
+  let countWhereClause = '';
+  let queryParams: any[] = [limit];
+  let countParams: any[] = [];
+
+  if (where && where.length > 0) {
+    const built = buildWhereClause(where, 2); // $1 is limit
+    whereClause = `AND (${built.clause})`;
+    queryParams = [limit, ...built.params];
+
+    const countBuilt = buildWhereClause(where, 1); // no limit offset
+    countWhereClause = `AND (${countBuilt.clause})`;
+    countParams = countBuilt.params;
+  }
+
   const orderClause = orderBy || `${escapeIdentifier(sanitizedTimestamp)} DESC`;
 
   const query = `
@@ -75,12 +87,12 @@ export async function findRecent(
       NOW() - INTERVAL '${timeWindow}' as threshold
     FROM ${escapeIdentifier(sanitizedSchema)}.${escapeIdentifier(sanitizedTable)}
     WHERE ${escapeIdentifier(sanitizedTimestamp)} >= NOW() - INTERVAL '${timeWindow}'
-      ${whereClause}
+      ${countWhereClause}
   `;
 
   const [result, countResult] = await Promise.all([
-    executeQuery(connection, logger, { query, params: [limit] }),
-    executeQuery(connection, logger, { query: countQuery })
+    executeQuery(connection, logger, { query, params: queryParams }),
+    executeQuery(connection, logger, { query: countQuery, params: countParams })
   ]);
 
   return {

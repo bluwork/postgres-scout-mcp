@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { DatabaseConnection } from '../types.js';
 import { Logger } from '../utils/logger.js';
 import { executeQuery } from '../utils/database.js';
-import { sanitizeIdentifier } from '../utils/sanitize.js';
+import { sanitizeIdentifier, assertNoSensitiveCatalogAccess } from '../utils/sanitize.js';
 
 const SuggestIndexesSchema = z.object({
   schema: z.string().optional().default('public'),
@@ -959,6 +959,8 @@ export async function optimizeQuery(
   const { query, includeRewrite, includeIndexes, targetTimeMs } = args;
 
   logger.info('optimizeQuery', 'Analyzing query for optimization');
+
+  assertNoSensitiveCatalogAccess(query);
 
   // Validate query is a SELECT (we only optimize read queries)
   const trimmedQuery = query.trim().toLowerCase();

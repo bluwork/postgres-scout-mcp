@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sanitizeQuery } from '../src/utils/sanitize.js';
+import { sanitizeQuery, assertNoSensitiveCatalogAccess } from '../src/utils/sanitize.js';
 
 describe('sanitizeQuery: dangerous function blocking in queries', () => {
   // --- VULN-001: pg_read_file ---
@@ -368,16 +368,16 @@ describe('sanitizeQuery: process control and resource abuse blocking (VULN-010 t
 
   // --- Legitimate functions must still pass ---
 
-  it('should allow pg_backend_pid', () => {
+  it('should reject pg_backend_pid (R3-015)', () => {
     expect(() =>
       sanitizeQuery("SELECT pg_backend_pid()", 'read-only')
-    ).not.toThrow();
+    ).toThrow();
   });
 
-  it('should allow pg_stat_get_activity', () => {
+  it('should reject pg_stat_get_activity with pg_backend_pid', () => {
     expect(() =>
       sanitizeQuery("SELECT * FROM pg_stat_get_activity(pg_backend_pid())", 'read-only')
-    ).not.toThrow();
+    ).toThrow();
   });
 });
 
@@ -504,5 +504,171 @@ describe('sanitizeQuery: sensitive system catalog blocking', () => {
     expect(() =>
       sanitizeQuery("SELECT * FROM pg_largeobject_metadata", 'read-only')
     ).toThrow();
+  });
+});
+
+describe('sanitizeQuery: round 3 — large object, network, metadata, DoS function blocking', () => {
+  // Large object API (R3-004)
+  const loFunctions = [
+    'lo_creat(-1)',
+    'lo_create(0)',
+    'lo_open(12345, 262144)',
+    'lo_close(0)',
+    'lo_get(32771)',
+    'lo_put(32771, 0, E\'\\\\x48\')',
+    "lo_from_bytea(0, E'\\\\x48656c6c6f')",
+    'lo_truncate(0, 100)',
+    'lo_unlink(32771)',
+    'loread(0, 100)',
+    'lowrite(0, E\'\\\\x48\')',
+  ];
+
+  for (const fn of loFunctions) {
+    it(`should reject ${fn.split('(')[0]}`, () => {
+      expect(() =>
+        sanitizeQuery(`SELECT ${fn}`, 'read-only')
+      ).toThrow();
+    });
+  }
+
+  // Network topology (R3-010)
+  const networkFunctions = [
+    'inet_server_addr()',
+    'inet_server_port()',
+    'inet_client_addr()',
+    'inet_client_port()',
+  ];
+
+  for (const fn of networkFunctions) {
+    it(`should reject ${fn.split('(')[0]}`, () => {
+      expect(() =>
+        sanitizeQuery(`SELECT ${fn}`, 'read-only')
+      ).toThrow();
+    });
+  }
+
+  // Server metadata (R3-012, R3-015)
+  const metadataFunctions = [
+    'pg_export_snapshot()',
+    'pg_current_logfile()',
+    'pg_postmaster_start_time()',
+    'pg_conf_load_time()',
+    'pg_backend_pid()',
+    'pg_tablespace_location(1663)',
+  ];
+
+  for (const fn of metadataFunctions) {
+    it(`should reject ${fn.split('(')[0]}`, () => {
+      expect(() =>
+        sanitizeQuery(`SELECT ${fn}`, 'read-only')
+      ).toThrow();
+    });
+  }
+
+  // DoS vectors (R3-016, R3-017)
+  it('should reject generate_series', () => {
+    expect(() =>
+      sanitizeQuery('SELECT * FROM generate_series(1, 1000000)', 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject repeat', () => {
+    expect(() =>
+      sanitizeQuery("SELECT repeat('A', 100000000)", 'read-only')
+    ).toThrow();
+  });
+
+  // Ensure existing allowed functions still work
+  it('should still allow NOW()', () => {
+    expect(() =>
+      sanitizeQuery('SELECT NOW()', 'read-only')
+    ).not.toThrow();
+  });
+
+  it('should still allow COUNT(*)', () => {
+    expect(() =>
+      sanitizeQuery('SELECT COUNT(*) FROM users', 'read-only')
+    ).not.toThrow();
+  });
+});
+
+describe('assertNoSensitiveCatalogAccess: user query catalog blocking (R3-001/002/007/008/009/011/013/014)', () => {
+  const blockedCatalogs = [
+    'pg_settings',
+    'pg_stat_activity',
+    'pg_stat_replication',
+    'pg_stat_gssapi',
+    'pg_ident_file_mappings',
+    'pg_proc',
+    'pg_database',
+    'pg_tablespace',
+    'pg_prepared_statements',
+  ];
+
+  for (const catalog of blockedCatalogs) {
+    it(`should reject SELECT from ${catalog}`, () => {
+      expect(() =>
+        assertNoSensitiveCatalogAccess(`SELECT * FROM ${catalog}`)
+      ).toThrow();
+    });
+
+    it(`should reject ${catalog} with schema prefix`, () => {
+      expect(() =>
+        assertNoSensitiveCatalogAccess(`SELECT * FROM pg_catalog.${catalog}`)
+      ).toThrow();
+    });
+
+    it(`should reject ${catalog} case-insensitive`, () => {
+      expect(() =>
+        assertNoSensitiveCatalogAccess(`SELECT * FROM ${catalog.toUpperCase()}`)
+      ).toThrow();
+    });
+  }
+
+  // information_schema privilege views
+  const blockedInfoSchemaViews = [
+    'information_schema.enabled_roles',
+    'information_schema.role_table_grants',
+    'information_schema.applicable_roles',
+    'information_schema.role_routine_grants',
+  ];
+
+  for (const view of blockedInfoSchemaViews) {
+    it(`should reject SELECT from ${view}`, () => {
+      expect(() =>
+        assertNoSensitiveCatalogAccess(`SELECT * FROM ${view}`)
+      ).toThrow();
+    });
+  }
+
+  // Must NOT block safe catalogs/views used by internal tools
+  it('should allow pg_tables', () => {
+    expect(() =>
+      assertNoSensitiveCatalogAccess("SELECT * FROM pg_tables WHERE schemaname = 'public'")
+    ).not.toThrow();
+  });
+
+  it('should allow information_schema.columns', () => {
+    expect(() =>
+      assertNoSensitiveCatalogAccess('SELECT * FROM information_schema.columns')
+    ).not.toThrow();
+  });
+
+  it('should allow pg_indexes', () => {
+    expect(() =>
+      assertNoSensitiveCatalogAccess('SELECT * FROM pg_indexes')
+    ).not.toThrow();
+  });
+
+  it('should allow regular user tables', () => {
+    expect(() =>
+      assertNoSensitiveCatalogAccess('SELECT * FROM users')
+    ).not.toThrow();
+  });
+
+  it('should allow tables with catalog-like substrings', () => {
+    expect(() =>
+      assertNoSensitiveCatalogAccess('SELECT * FROM user_settings')
+    ).not.toThrow();
   });
 });

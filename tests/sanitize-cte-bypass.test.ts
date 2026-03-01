@@ -92,7 +92,7 @@ describe('sanitizeQuery: CTE with data-modifying main statement in read-only mod
     // body to verify the parser handles WITH RECURSIVE + column list syntax.
     expect(() =>
       sanitizeQuery(
-        'WITH RECURSIVE cte(n) AS (SELECT 1 FROM generate_series(1,10)) SELECT * FROM cte',
+        'WITH RECURSIVE cte(n) AS (SELECT 1 FROM items) SELECT * FROM cte',
         'read-only'
       )
     ).not.toThrow();
@@ -101,7 +101,7 @@ describe('sanitizeQuery: CTE with data-modifying main statement in read-only mod
   it('should reject WITH RECURSIVE with column list followed by DELETE in read-only mode', () => {
     expect(() =>
       sanitizeQuery(
-        'WITH RECURSIVE cte(n) AS (SELECT 1 FROM generate_series(1,10)) DELETE FROM users',
+        'WITH RECURSIVE cte(n) AS (SELECT 1 FROM items) DELETE FROM users',
         'read-only'
       )
     ).toThrow();

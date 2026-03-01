@@ -123,13 +123,14 @@ describe('buildWhereClause: IS NULL / IS NOT NULL', () => {
     expect(result.params).toEqual([]);
   });
 
-  it('should build IS NOT NULL condition', () => {
+  it('should build IS NOT NULL condition (with additional condition)', () => {
     const conditions: WhereCondition[] = [
-      { field: 'name', op: 'IS NOT NULL' }
+      { field: 'name', op: 'IS NOT NULL' },
+      { field: 'status', op: '=', value: 'active' }
     ];
     const result = buildWhereClause(conditions);
-    expect(result.clause).toBe('"name" IS NOT NULL');
-    expect(result.params).toEqual([]);
+    expect(result.clause).toBe('"name" IS NOT NULL AND "status" = $1');
+    expect(result.params).toEqual(['active']);
   });
 });
 
@@ -355,5 +356,137 @@ describe('WhereConditionSchema: Zod validation', () => {
       or: [{ field: 'id', op: '=', value: 1 }], field: 'extra'
     });
     expect(result.success).toBe(false);
+  });
+});
+
+describe('buildWhereClause: trivially-true condition detection (R3-019/020/021)', () => {
+  // R3-019: LIKE '%' matches all
+  it('should reject LIKE with % wildcard only', () => {
+    const conditions: WhereCondition[] = [
+      { field: 'name', op: 'LIKE', value: '%' }
+    ];
+    expect(() => buildWhereClause(conditions)).toThrow(/trivially true/i);
+  });
+
+  it('should reject LIKE with %% wildcard only', () => {
+    const conditions: WhereCondition[] = [
+      { field: 'name', op: 'LIKE', value: '%%' }
+    ];
+    expect(() => buildWhereClause(conditions)).toThrow(/trivially true/i);
+  });
+
+  it('should reject ILIKE with % wildcard only', () => {
+    const conditions: WhereCondition[] = [
+      { field: 'name', op: 'ILIKE', value: '%' }
+    ];
+    expect(() => buildWhereClause(conditions)).toThrow(/trivially true/i);
+  });
+
+  it('should allow LIKE with actual pattern', () => {
+    const conditions: WhereCondition[] = [
+      { field: 'name', op: 'LIKE', value: '%john%' }
+    ];
+    expect(() => buildWhereClause(conditions)).not.toThrow();
+  });
+
+  it('should allow LIKE with prefix pattern', () => {
+    const conditions: WhereCondition[] = [
+      { field: 'name', op: 'LIKE', value: 'john%' }
+    ];
+    expect(() => buildWhereClause(conditions)).not.toThrow();
+  });
+
+  // R3-020: IS NOT NULL as sole condition
+  it('should reject IS NOT NULL as sole condition', () => {
+    const conditions: WhereCondition[] = [
+      { field: 'id', op: 'IS NOT NULL' }
+    ];
+    expect(() => buildWhereClause(conditions)).toThrow(/trivially true/i);
+  });
+
+  it('should allow IS NOT NULL combined with other conditions', () => {
+    const conditions: WhereCondition[] = [
+      { field: 'id', op: 'IS NOT NULL' },
+      { field: 'status', op: '=', value: 'active' }
+    ];
+    expect(() => buildWhereClause(conditions)).not.toThrow();
+  });
+
+  it('should allow IS NULL as sole condition (not trivially true)', () => {
+    const conditions: WhereCondition[] = [
+      { field: 'deleted_at', op: 'IS NULL' }
+    ];
+    expect(() => buildWhereClause(conditions)).not.toThrow();
+  });
+
+  // R3-021: BETWEEN with extreme ranges
+  it('should reject BETWEEN with int4 full range', () => {
+    const conditions: WhereCondition[] = [
+      { field: 'id', op: 'BETWEEN', value: [-2147483648, 2147483647] }
+    ];
+    expect(() => buildWhereClause(conditions)).toThrow(/trivially true/i);
+  });
+
+  it('should reject BETWEEN with very large numeric range', () => {
+    const conditions: WhereCondition[] = [
+      { field: 'id', op: 'BETWEEN', value: [-9999999999, 9999999999] }
+    ];
+    expect(() => buildWhereClause(conditions)).toThrow(/trivially true/i);
+  });
+
+  it('should allow BETWEEN with reasonable numeric range', () => {
+    const conditions: WhereCondition[] = [
+      { field: 'price', op: 'BETWEEN', value: [10, 50] }
+    ];
+    expect(() => buildWhereClause(conditions)).not.toThrow();
+  });
+
+  it('should allow BETWEEN with date strings (not numeric)', () => {
+    const conditions: WhereCondition[] = [
+      { field: 'created_at', op: 'BETWEEN', value: ['2024-01-01', '2024-12-31'] }
+    ];
+    expect(() => buildWhereClause(conditions)).not.toThrow();
+  });
+
+  // Sole IS NOT NULL nested in AND group should also be caught
+  it('should reject sole IS NOT NULL inside AND group', () => {
+    const conditions: WhereCondition[] = [
+      { and: [{ field: 'id', op: 'IS NOT NULL' }] }
+    ];
+    expect(() => buildWhereClause(conditions)).toThrow(/trivially true/i);
+  });
+
+  // Recursive detection: trivially-true inside nested OR/AND groups
+  it('should reject LIKE % nested inside OR group', () => {
+    const conditions: WhereCondition[] = [
+      { or: [
+        { field: 'name', op: 'LIKE', value: '%' },
+        { field: 'status', op: '=', value: 'active' }
+      ]}
+    ];
+    expect(() => buildWhereClause(conditions)).toThrow(/trivially true/i);
+  });
+
+  it('should reject extreme BETWEEN nested inside AND group', () => {
+    const conditions: WhereCondition[] = [
+      { and: [
+        { field: 'id', op: 'BETWEEN', value: [-2147483648, 2147483647] },
+        { field: 'status', op: '=', value: 'active' }
+      ]}
+    ];
+    expect(() => buildWhereClause(conditions)).toThrow(/trivially true/i);
+  });
+
+  it('should reject ILIKE % deeply nested in OR inside AND', () => {
+    const conditions: WhereCondition[] = [
+      { and: [
+        { or: [
+          { field: 'name', op: 'ILIKE', value: '%%' },
+          { field: 'role', op: '=', value: 'admin' }
+        ]},
+        { field: 'active', op: '=', value: true }
+      ]}
+    ];
+    expect(() => buildWhereClause(conditions)).toThrow(/trivially true/i);
   });
 });
