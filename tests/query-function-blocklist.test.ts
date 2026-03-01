@@ -368,16 +368,16 @@ describe('sanitizeQuery: process control and resource abuse blocking (VULN-010 t
 
   // --- Legitimate functions must still pass ---
 
-  it('should allow pg_backend_pid', () => {
+  it('should reject pg_backend_pid (R3-015)', () => {
     expect(() =>
       sanitizeQuery("SELECT pg_backend_pid()", 'read-only')
-    ).not.toThrow();
+    ).toThrow();
   });
 
-  it('should allow pg_stat_get_activity', () => {
+  it('should reject pg_stat_get_activity with pg_backend_pid', () => {
     expect(() =>
       sanitizeQuery("SELECT * FROM pg_stat_get_activity(pg_backend_pid())", 'read-only')
-    ).not.toThrow();
+    ).toThrow();
   });
 });
 
@@ -504,5 +504,90 @@ describe('sanitizeQuery: sensitive system catalog blocking', () => {
     expect(() =>
       sanitizeQuery("SELECT * FROM pg_largeobject_metadata", 'read-only')
     ).toThrow();
+  });
+});
+
+describe('sanitizeQuery: round 3 — large object, network, metadata, DoS function blocking', () => {
+  // Large object API (R3-004)
+  const loFunctions = [
+    'lo_creat(-1)',
+    'lo_create(0)',
+    'lo_open(12345, 262144)',
+    'lo_close(0)',
+    'lo_get(32771)',
+    'lo_put(32771, 0, E\'\\\\x48\')',
+    "lo_from_bytea(0, E'\\\\x48656c6c6f')",
+    'lo_truncate(0, 100)',
+    'lo_unlink(32771)',
+    'loread(0, 100)',
+    'lowrite(0, E\'\\\\x48\')',
+  ];
+
+  for (const fn of loFunctions) {
+    it(`should reject ${fn.split('(')[0]}`, () => {
+      expect(() =>
+        sanitizeQuery(`SELECT ${fn}`, 'read-only')
+      ).toThrow();
+    });
+  }
+
+  // Network topology (R3-010)
+  const networkFunctions = [
+    'inet_server_addr()',
+    'inet_server_port()',
+    'inet_client_addr()',
+    'inet_client_port()',
+  ];
+
+  for (const fn of networkFunctions) {
+    it(`should reject ${fn.split('(')[0]}`, () => {
+      expect(() =>
+        sanitizeQuery(`SELECT ${fn}`, 'read-only')
+      ).toThrow();
+    });
+  }
+
+  // Server metadata (R3-012, R3-015)
+  const metadataFunctions = [
+    'pg_export_snapshot()',
+    'pg_current_logfile()',
+    'pg_postmaster_start_time()',
+    'pg_conf_load_time()',
+    'pg_backend_pid()',
+    'pg_tablespace_location(1663)',
+  ];
+
+  for (const fn of metadataFunctions) {
+    it(`should reject ${fn.split('(')[0]}`, () => {
+      expect(() =>
+        sanitizeQuery(`SELECT ${fn}`, 'read-only')
+      ).toThrow();
+    });
+  }
+
+  // DoS vectors (R3-016, R3-017)
+  it('should reject generate_series', () => {
+    expect(() =>
+      sanitizeQuery('SELECT * FROM generate_series(1, 1000000)', 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject repeat', () => {
+    expect(() =>
+      sanitizeQuery("SELECT repeat('A', 100000000)", 'read-only')
+    ).toThrow();
+  });
+
+  // Ensure existing allowed functions still work
+  it('should still allow NOW()', () => {
+    expect(() =>
+      sanitizeQuery('SELECT NOW()', 'read-only')
+    ).not.toThrow();
+  });
+
+  it('should still allow COUNT(*)', () => {
+    expect(() =>
+      sanitizeQuery('SELECT COUNT(*) FROM users', 'read-only')
+    ).not.toThrow();
   });
 });

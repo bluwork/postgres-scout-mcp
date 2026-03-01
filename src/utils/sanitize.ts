@@ -37,9 +37,20 @@ const QUERY_DANGEROUS_FUNCTIONS = [
   /\bpg_stat_file\s*\(/i,
   // Timing / sleep
   /\bpg_sleep\s*\(/i,
-  // Large object I/O
+  // Large object API — complete set (R3-004)
   /\blo_import\s*\(/i,
   /\blo_export\s*\(/i,
+  /\blo_creat\s*\(/i,
+  /\blo_create\s*\(/i,
+  /\blo_open\s*\(/i,
+  /\blo_close\s*\(/i,
+  /\blo_get\s*\(/i,
+  /\blo_put\s*\(/i,
+  /\blo_from_bytea\s*\(/i,
+  /\blo_truncate\s*\(/i,
+  /\blo_unlink\s*\(/i,
+  /\bloread\s*\(/i,
+  /\blowrite\s*\(/i,
   // Remote execution
   /\bdblink\s*\(/i,
   // Configuration
@@ -68,6 +79,21 @@ const QUERY_DANGEROUS_FUNCTIONS = [
   /\bpg_advisory_xact_lock\s*\(/i,
   /\bpg_advisory_xact_lock_shared\s*\(/i,
   /\bpg_notify\s*\(/i,
+  // Network topology disclosure (R3-010)
+  /\binet_server_addr\s*\(/i,
+  /\binet_server_port\s*\(/i,
+  /\binet_client_addr\s*\(/i,
+  /\binet_client_port\s*\(/i,
+  // Server metadata disclosure (R3-012, R3-015)
+  /\bpg_export_snapshot\s*\(/i,
+  /\bpg_current_logfile\s*\(/i,
+  /\bpg_postmaster_start_time\s*\(/i,
+  /\bpg_conf_load_time\s*\(/i,
+  /\bpg_backend_pid\s*\(/i,
+  /\bpg_tablespace_location\s*\(/i,
+  // DoS / resource exhaustion (R3-016, R3-017)
+  /\bgenerate_series\s*\(/i,
+  /\brepeat\s*\(/i,
 ];
 
 const SENSITIVE_CATALOGS = [
