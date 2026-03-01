@@ -95,18 +95,18 @@ const WHERE_DANGEROUS_PATTERNS = [
   /\bSELECT\b/i,
   /\bEXECUTE\b/i,
   /\bCOPY\b/i,
-  /\bpg_sleep\s*\(/i,
-  /\bpg_read_file\s*\(/i,
-  /\bpg_ls_dir\s*\(/i,
-  /\bpg_stat_file\s*\(/i,
-  /\blo_import\s*\(/i,
-  /\blo_export\s*\(/i,
-  /\bdblink\s*\(/i,
-  /\bcurrent_setting\s*\(/i,
-  /\bset_config\s*\(/i
+  ...QUERY_DANGEROUS_FUNCTIONS,
 ];
 
 const ALLOWED_CTE_MAIN_OPERATIONS = ['SELECT', 'EXPLAIN'];
+
+function assertNoMatch(patterns: RegExp[], input: string, message: string): void {
+  for (const pattern of patterns) {
+    if (pattern.test(input)) {
+      throw new Error(message);
+    }
+  }
+}
 
 function isWordChar(c: string): boolean {
   return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c === '_';
@@ -297,23 +297,9 @@ export function sanitizeQuery(query: string, mode: DatabaseMode): void {
     );
   }
 
-  for (const pattern of DANGEROUS_PATTERNS) {
-    if (pattern.test(trimmedQuery)) {
-      throw new Error('Potentially dangerous query pattern detected');
-    }
-  }
-
-  for (const pattern of QUERY_DANGEROUS_FUNCTIONS) {
-    if (pattern.test(trimmedQuery)) {
-      throw new Error('Potentially dangerous function call detected');
-    }
-  }
-
-  for (const pattern of SENSITIVE_CATALOGS) {
-    if (pattern.test(trimmedQuery)) {
-      throw new Error('Access to sensitive system catalog is not allowed');
-    }
-  }
+  assertNoMatch(DANGEROUS_PATTERNS, trimmedQuery, 'Potentially dangerous query pattern detected');
+  assertNoMatch(QUERY_DANGEROUS_FUNCTIONS, trimmedQuery, 'Potentially dangerous function call detected');
+  assertNoMatch(SENSITIVE_CATALOGS, trimmedQuery, 'Access to sensitive system catalog is not allowed');
 
   if (mode === 'read-only' && CTE_DATA_MODIFYING_PATTERN.test(trimmedQuery)) {
     throw new Error(
@@ -382,11 +368,7 @@ export function validateUserWhereClause(where: string): void {
 
   const trimmed = where.trim();
 
-  for (const pattern of WHERE_DANGEROUS_PATTERNS) {
-    if (pattern.test(trimmed)) {
-      throw new Error('Potentially dangerous pattern detected in WHERE clause');
-    }
-  }
+  assertNoMatch(WHERE_DANGEROUS_PATTERNS, trimmed, 'Potentially dangerous pattern detected in WHERE clause');
 
   const openParens = (trimmed.match(/\(/g) || []).length;
   const closeParens = (trimmed.match(/\)/g) || []).length;
@@ -407,11 +389,7 @@ export function validateCondition(condition: string): void {
 
   const trimmed = condition.trim();
 
-  for (const pattern of WHERE_DANGEROUS_PATTERNS) {
-    if (pattern.test(trimmed)) {
-      throw new Error('Potentially dangerous pattern detected in condition');
-    }
-  }
+  assertNoMatch(WHERE_DANGEROUS_PATTERNS, trimmed, 'Potentially dangerous pattern detected in condition');
 
   const openParens = (trimmed.match(/\(/g) || []).length;
   const closeParens = (trimmed.match(/\)/g) || []).length;
@@ -440,11 +418,7 @@ export function validateOrderBy(orderBy: string): void {
 
   const trimmed = orderBy.trim();
 
-  for (const pattern of WHERE_DANGEROUS_PATTERNS) {
-    if (pattern.test(trimmed)) {
-      throw new Error('Potentially dangerous pattern detected in ORDER BY clause');
-    }
-  }
+  assertNoMatch(WHERE_DANGEROUS_PATTERNS, trimmed, 'Potentially dangerous pattern detected in ORDER BY clause');
 
   const validOrderPattern = /^[\w"]+(\s+(ASC|DESC))?(,\s*[\w"]+(\s+(ASC|DESC))?)*$/i;
   if (!validOrderPattern.test(trimmed)) {
@@ -469,11 +443,7 @@ export function validateRawSetClause(set: string): void {
 
   const trimmed = set.trim();
 
-  for (const pattern of WHERE_DANGEROUS_PATTERNS) {
-    if (pattern.test(trimmed)) {
-      throw new Error('Potentially dangerous pattern detected in SET clause');
-    }
-  }
+  assertNoMatch(WHERE_DANGEROUS_PATTERNS, trimmed, 'Potentially dangerous pattern detected in SET clause');
 
   const openParens = (trimmed.match(/\(/g) || []).length;
   const closeParens = (trimmed.match(/\)/g) || []).length;
