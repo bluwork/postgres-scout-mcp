@@ -490,3 +490,159 @@ describe('buildWhereClause: trivially-true condition detection (R3-019/020/021)'
     expect(() => buildWhereClause(conditions)).toThrow(/trivially true/i);
   });
 });
+
+describe('buildWhereClause: round 4 — trivially-true bypass fixes (R4-004/005/006)', () => {
+  // R4-004: LIKE/ILIKE wildcard-only patterns beyond just %
+  it('should reject LIKE with _%  (underscore + percent)', () => {
+    const conditions: WhereCondition[] = [
+      { field: 'name', op: 'LIKE', value: '_%' }
+    ];
+    expect(() => buildWhereClause(conditions)).toThrow(/trivially true/i);
+  });
+
+  it('should reject LIKE with %_% (percent-underscore-percent)', () => {
+    const conditions: WhereCondition[] = [
+      { field: 'name', op: 'LIKE', value: '%_%' }
+    ];
+    expect(() => buildWhereClause(conditions)).toThrow(/trivially true/i);
+  });
+
+  it('should reject LIKE with __ (double underscore)', () => {
+    const conditions: WhereCondition[] = [
+      { field: 'name', op: 'LIKE', value: '__' }
+    ];
+    expect(() => buildWhereClause(conditions)).toThrow(/trivially true/i);
+  });
+
+  it('should reject ILIKE with _%', () => {
+    const conditions: WhereCondition[] = [
+      { field: 'name', op: 'ILIKE', value: '_%' }
+    ];
+    expect(() => buildWhereClause(conditions)).toThrow(/trivially true/i);
+  });
+
+  it('should reject LIKE with ___ (triple underscore)', () => {
+    const conditions: WhereCondition[] = [
+      { field: 'code', op: 'LIKE', value: '___' }
+    ];
+    expect(() => buildWhereClause(conditions)).toThrow(/trivially true/i);
+  });
+
+  // Must still allow legitimate patterns
+  it('should allow LIKE with a% (has literal character)', () => {
+    const conditions: WhereCondition[] = [
+      { field: 'name', op: 'LIKE', value: 'a%' }
+    ];
+    expect(() => buildWhereClause(conditions)).not.toThrow();
+  });
+
+  it('should allow LIKE with %john% (has literal characters)', () => {
+    const conditions: WhereCondition[] = [
+      { field: 'name', op: 'LIKE', value: '%john%' }
+    ];
+    expect(() => buildWhereClause(conditions)).not.toThrow();
+  });
+
+  it('should allow LIKE with _a% (has literal character)', () => {
+    const conditions: WhereCondition[] = [
+      { field: 'name', op: 'LIKE', value: '_a%' }
+    ];
+    expect(() => buildWhereClause(conditions)).not.toThrow();
+  });
+
+  // R4-005: Complementary OR tautologies on same field
+  it('should reject OR with IS NULL + IS NOT NULL on same field', () => {
+    const conditions: WhereCondition[] = [
+      { or: [
+        { field: 'deleted_at', op: 'IS NULL' },
+        { field: 'deleted_at', op: 'IS NOT NULL' }
+      ]}
+    ];
+    expect(() => buildWhereClause(conditions)).toThrow(/trivially true/i);
+  });
+
+  it('should reject OR with = and != same value on same field', () => {
+    const conditions: WhereCondition[] = [
+      { or: [
+        { field: 'status', op: '=', value: 'active' },
+        { field: 'status', op: '!=', value: 'active' }
+      ]}
+    ];
+    expect(() => buildWhereClause(conditions)).toThrow(/trivially true/i);
+  });
+
+  it('should reject OR with > N and <= N on same field', () => {
+    const conditions: WhereCondition[] = [
+      { or: [
+        { field: 'age', op: '>', value: 18 },
+        { field: 'age', op: '<=', value: 18 }
+      ]}
+    ];
+    expect(() => buildWhereClause(conditions)).toThrow(/trivially true/i);
+  });
+
+  it('should reject OR with >= N and < N on same field', () => {
+    const conditions: WhereCondition[] = [
+      { or: [
+        { field: 'score', op: '>=', value: 50 },
+        { field: 'score', op: '<', value: 50 }
+      ]}
+    ];
+    expect(() => buildWhereClause(conditions)).toThrow(/trivially true/i);
+  });
+
+  // Must still allow legitimate OR patterns
+  it('should allow OR with different fields (IS NULL + IS NOT NULL)', () => {
+    const conditions: WhereCondition[] = [
+      { or: [
+        { field: 'deleted_at', op: 'IS NULL' },
+        { field: 'created_at', op: 'IS NOT NULL' }
+      ]}
+    ];
+    expect(() => buildWhereClause(conditions)).not.toThrow();
+  });
+
+  it('should allow OR with different values (= x OR = y)', () => {
+    const conditions: WhereCondition[] = [
+      { or: [
+        { field: 'status', op: '=', value: 'active' },
+        { field: 'status', op: '=', value: 'pending' }
+      ]}
+    ];
+    expect(() => buildWhereClause(conditions)).not.toThrow();
+  });
+
+  it('should allow OR with non-complementary operators on same field', () => {
+    const conditions: WhereCondition[] = [
+      { or: [
+        { field: 'age', op: '>', value: 18 },
+        { field: 'age', op: '<', value: 5 }
+      ]}
+    ];
+    expect(() => buildWhereClause(conditions)).not.toThrow();
+  });
+
+  it('should allow OR with > and <= on different values', () => {
+    const conditions: WhereCondition[] = [
+      { or: [
+        { field: 'age', op: '>', value: 30 },
+        { field: 'age', op: '<=', value: 18 }
+      ]}
+    ];
+    expect(() => buildWhereClause(conditions)).not.toThrow();
+  });
+
+  // R4-006: nested tautologies inside larger groups
+  it('should reject nested OR tautology inside AND group', () => {
+    const conditions: WhereCondition[] = [
+      { and: [
+        { or: [
+          { field: 'x', op: 'IS NULL' },
+          { field: 'x', op: 'IS NOT NULL' }
+        ]},
+        { field: 'status', op: '=', value: 'active' }
+      ]}
+    ];
+    expect(() => buildWhereClause(conditions)).toThrow(/trivially true/i);
+  });
+});
