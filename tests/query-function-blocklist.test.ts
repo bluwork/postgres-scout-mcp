@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { sanitizeQuery } from '../src/utils/sanitize.js';
+import { sanitizeQuery, assertNoSensitiveCatalogAccess } from '../src/utils/sanitize.js';
 
 describe('sanitizeQuery: dangerous function blocking in queries', () => {
   // --- VULN-001: pg_read_file ---
@@ -588,6 +588,87 @@ describe('sanitizeQuery: round 3 — large object, network, metadata, DoS functi
   it('should still allow COUNT(*)', () => {
     expect(() =>
       sanitizeQuery('SELECT COUNT(*) FROM users', 'read-only')
+    ).not.toThrow();
+  });
+});
+
+describe('assertNoSensitiveCatalogAccess: user query catalog blocking (R3-001/002/007/008/009/011/013/014)', () => {
+  const blockedCatalogs = [
+    'pg_settings',
+    'pg_stat_activity',
+    'pg_stat_replication',
+    'pg_stat_gssapi',
+    'pg_ident_file_mappings',
+    'pg_proc',
+    'pg_database',
+    'pg_tablespace',
+    'pg_prepared_statements',
+  ];
+
+  for (const catalog of blockedCatalogs) {
+    it(`should reject SELECT from ${catalog}`, () => {
+      expect(() =>
+        assertNoSensitiveCatalogAccess(`SELECT * FROM ${catalog}`)
+      ).toThrow();
+    });
+
+    it(`should reject ${catalog} with schema prefix`, () => {
+      expect(() =>
+        assertNoSensitiveCatalogAccess(`SELECT * FROM pg_catalog.${catalog}`)
+      ).toThrow();
+    });
+
+    it(`should reject ${catalog} case-insensitive`, () => {
+      expect(() =>
+        assertNoSensitiveCatalogAccess(`SELECT * FROM ${catalog.toUpperCase()}`)
+      ).toThrow();
+    });
+  }
+
+  // information_schema privilege views
+  const blockedInfoSchemaViews = [
+    'information_schema.enabled_roles',
+    'information_schema.role_table_grants',
+    'information_schema.applicable_roles',
+    'information_schema.role_routine_grants',
+  ];
+
+  for (const view of blockedInfoSchemaViews) {
+    it(`should reject SELECT from ${view}`, () => {
+      expect(() =>
+        assertNoSensitiveCatalogAccess(`SELECT * FROM ${view}`)
+      ).toThrow();
+    });
+  }
+
+  // Must NOT block safe catalogs/views used by internal tools
+  it('should allow pg_tables', () => {
+    expect(() =>
+      assertNoSensitiveCatalogAccess("SELECT * FROM pg_tables WHERE schemaname = 'public'")
+    ).not.toThrow();
+  });
+
+  it('should allow information_schema.columns', () => {
+    expect(() =>
+      assertNoSensitiveCatalogAccess('SELECT * FROM information_schema.columns')
+    ).not.toThrow();
+  });
+
+  it('should allow pg_indexes', () => {
+    expect(() =>
+      assertNoSensitiveCatalogAccess('SELECT * FROM pg_indexes')
+    ).not.toThrow();
+  });
+
+  it('should allow regular user tables', () => {
+    expect(() =>
+      assertNoSensitiveCatalogAccess('SELECT * FROM users')
+    ).not.toThrow();
+  });
+
+  it('should allow tables with catalog-like substrings', () => {
+    expect(() =>
+      assertNoSensitiveCatalogAccess('SELECT * FROM user_settings')
     ).not.toThrow();
   });
 });

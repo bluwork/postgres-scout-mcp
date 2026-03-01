@@ -108,6 +108,22 @@ const SENSITIVE_CATALOGS = [
   /\bpg_largeobject_metadata\b/i,
 ];
 
+const USER_QUERY_SENSITIVE_CATALOGS = [
+  /\bpg_settings\b/i,
+  /\bpg_stat_activity\b/i,
+  /\bpg_stat_replication\b/i,
+  /\bpg_stat_gssapi\b/i,
+  /\bpg_ident_file_mappings\b/i,
+  /\bpg_proc\b/i,
+  /\bpg_database\b/i,
+  /\bpg_tablespace\b/i,
+  /\bpg_prepared_statements\b/i,
+  /\binformation_schema\.enabled_roles\b/i,
+  /\binformation_schema\.role_table_grants\b/i,
+  /\binformation_schema\.applicable_roles\b/i,
+  /\binformation_schema\.role_routine_grants\b/i,
+];
+
 const CTE_DATA_MODIFYING_PATTERN = /\bAS\s+(NOT\s+)?MATERIALIZED\s*\(\s*(INSERT|UPDATE|DELETE|TRUNCATE)\b|\bAS\s*\(\s*(INSERT|UPDATE|DELETE|TRUNCATE)\b/i;
 
 const WHERE_DANGEROUS_PATTERNS = [
@@ -132,6 +148,14 @@ function assertNoMatch(patterns: RegExp[], input: string, message: string): void
       throw new Error(message);
     }
   }
+}
+
+export function assertNoSensitiveCatalogAccess(query: string): void {
+  assertNoMatch(
+    USER_QUERY_SENSITIVE_CATALOGS,
+    query,
+    'Access to sensitive system catalog is not allowed in user queries'
+  );
 }
 
 function isWordChar(c: string): boolean {

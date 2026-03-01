@@ -3,6 +3,7 @@ import { DatabaseConnection } from '../types.js';
 import { Logger } from '../utils/logger.js';
 import { executeQuery } from '../utils/database.js';
 import { formatQueryResult } from '../utils/result-formatter.js';
+import { assertNoSensitiveCatalogAccess } from '../utils/sanitize.js';
 
 const ExecuteQuerySchema = z.object({
   query: z.string(),
@@ -30,6 +31,8 @@ export async function executeQueryTool(
     queryLength: query.length,
     paramCount: params.length
   });
+
+  assertNoSensitiveCatalogAccess(query);
 
   const startTime = Date.now();
 
@@ -67,6 +70,8 @@ export async function explainQueryTool(
     verbose,
     buffers
   });
+
+  assertNoSensitiveCatalogAccess(query);
 
   const explainOptions: string[] = ['FORMAT JSON'];
   if (analyze) explainOptions.push('ANALYZE');
