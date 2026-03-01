@@ -768,3 +768,224 @@ describe('sanitizeQuery: round 4 — stats reset, sequence manipulation, WAL ops
     ).not.toThrow();
   });
 });
+
+describe('sanitizeQuery: round 4 — info disclosure and DoS (R4-009 through R4-018)', () => {
+  // R4-010: version() — server metadata disclosure
+  it('should reject version()', () => {
+    expect(() =>
+      sanitizeQuery('SELECT version()', 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject VERSION() (upper case)', () => {
+    expect(() =>
+      sanitizeQuery('SELECT VERSION()', 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject version() in read-write mode', () => {
+    expect(() =>
+      sanitizeQuery('SELECT version()', 'read-write')
+    ).toThrow();
+  });
+
+  // R4-011: current_user / session_user — role identity disclosure
+  it('should reject current_user', () => {
+    expect(() =>
+      sanitizeQuery('SELECT current_user', 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject session_user', () => {
+    expect(() =>
+      sanitizeQuery('SELECT session_user', 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject CURRENT_USER (upper case)', () => {
+    expect(() =>
+      sanitizeQuery('SELECT CURRENT_USER', 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject current_user in read-write mode', () => {
+    expect(() =>
+      sanitizeQuery('SELECT current_user', 'read-write')
+    ).toThrow();
+  });
+
+  // R4-012: pg_relation_filepath — physical path disclosure
+  it('should reject pg_relation_filepath()', () => {
+    expect(() =>
+      sanitizeQuery("SELECT pg_relation_filepath('pg_class')", 'read-only')
+    ).toThrow();
+  });
+
+  // R4-013: WAL/recovery state disclosure
+  it('should reject pg_is_in_recovery()', () => {
+    expect(() =>
+      sanitizeQuery('SELECT pg_is_in_recovery()', 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject pg_last_wal_replay_lsn()', () => {
+    expect(() =>
+      sanitizeQuery('SELECT pg_last_wal_replay_lsn()', 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject pg_current_wal_lsn()', () => {
+    expect(() =>
+      sanitizeQuery('SELECT pg_current_wal_lsn()', 'read-only')
+    ).toThrow();
+  });
+
+  // R4-016: privilege enumeration
+  it('should reject has_table_privilege()', () => {
+    expect(() =>
+      sanitizeQuery("SELECT has_table_privilege('users', 'SELECT')", 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject has_schema_privilege()', () => {
+    expect(() =>
+      sanitizeQuery("SELECT has_schema_privilege('public', 'USAGE')", 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject has_database_privilege()', () => {
+    expect(() =>
+      sanitizeQuery("SELECT has_database_privilege('mydb', 'CONNECT')", 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject HAS_TABLE_PRIVILEGE (upper case)', () => {
+    expect(() =>
+      sanitizeQuery("SELECT HAS_TABLE_PRIVILEGE('users', 'SELECT')", 'read-only')
+    ).toThrow();
+  });
+
+  // R4-017: transaction ID disclosure
+  it('should reject txid_current()', () => {
+    expect(() =>
+      sanitizeQuery('SELECT txid_current()', 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject txid_current_snapshot()', () => {
+    expect(() =>
+      sanitizeQuery('SELECT txid_current_snapshot()', 'read-only')
+    ).toThrow();
+  });
+
+  // R4-018: DoS via string padding (repeat() alternative)
+  it('should reject rpad()', () => {
+    expect(() =>
+      sanitizeQuery("SELECT rpad('A', 100000000)", 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject lpad()', () => {
+    expect(() =>
+      sanitizeQuery("SELECT lpad('A', 100000000)", 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject RPAD (upper case)', () => {
+    expect(() =>
+      sanitizeQuery("SELECT RPAD('A', 100000000)", 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject lpad in read-write mode', () => {
+    expect(() =>
+      sanitizeQuery("SELECT lpad('x', 999999999)", 'read-write')
+    ).toThrow();
+  });
+
+  // False-positive safety: legitimate queries must still pass
+  it('should allow SELECT my_version FROM t (no parens)', () => {
+    expect(() =>
+      sanitizeQuery('SELECT my_version FROM t', 'read-only')
+    ).not.toThrow();
+  });
+
+  it('should allow SELECT "current_user_id" FROM t (different word boundary)', () => {
+    expect(() =>
+      sanitizeQuery('SELECT current_user_id FROM t', 'read-only')
+    ).not.toThrow();
+  });
+
+  it('should allow SELECT padding FROM t (not rpad)', () => {
+    expect(() =>
+      sanitizeQuery('SELECT padding FROM t', 'read-only')
+    ).not.toThrow();
+  });
+
+  it('should allow SELECT session_user_name FROM t (different word boundary)', () => {
+    expect(() =>
+      sanitizeQuery('SELECT session_user_name FROM t', 'read-only')
+    ).not.toThrow();
+  });
+});
+
+describe('sanitizeQuery / assertNoSensitiveCatalogAccess: round 4 catalogs (R4-009, R4-014, R4-015)', () => {
+  // R4-015: pg_available_extensions — blocked via SENSITIVE_CATALOGS (all queries)
+  it('should reject pg_available_extensions via sanitizeQuery', () => {
+    expect(() =>
+      sanitizeQuery('SELECT * FROM pg_available_extensions', 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject pg_available_extensions in read-write mode', () => {
+    expect(() =>
+      sanitizeQuery('SELECT * FROM pg_available_extensions', 'read-write')
+    ).toThrow();
+  });
+
+  // R4-009: pg_stat_database — blocked via USER_QUERY_SENSITIVE_CATALOGS (user queries only)
+  it('should reject pg_stat_database via assertNoSensitiveCatalogAccess', () => {
+    expect(() =>
+      assertNoSensitiveCatalogAccess('SELECT * FROM pg_stat_database')
+    ).toThrow();
+  });
+
+  it('should reject pg_stat_database case-insensitive', () => {
+    expect(() =>
+      assertNoSensitiveCatalogAccess('SELECT * FROM PG_STAT_DATABASE')
+    ).toThrow();
+  });
+
+  it('should reject pg_stat_database with schema prefix', () => {
+    expect(() =>
+      assertNoSensitiveCatalogAccess('SELECT * FROM pg_catalog.pg_stat_database')
+    ).toThrow();
+  });
+
+  // R4-014: pg_stat_user_tables — blocked via USER_QUERY_SENSITIVE_CATALOGS (user queries only)
+  it('should reject pg_stat_user_tables via assertNoSensitiveCatalogAccess', () => {
+    expect(() =>
+      assertNoSensitiveCatalogAccess('SELECT * FROM pg_stat_user_tables')
+    ).toThrow();
+  });
+
+  it('should reject pg_stat_user_tables case-insensitive', () => {
+    expect(() =>
+      assertNoSensitiveCatalogAccess('SELECT * FROM PG_STAT_USER_TABLES')
+    ).toThrow();
+  });
+
+  // pg_stat_database and pg_stat_user_tables must NOT be blocked by sanitizeQuery
+  // (internal tools use them)
+  it('should allow pg_stat_database via sanitizeQuery (internal tools need it)', () => {
+    expect(() =>
+      sanitizeQuery('SELECT * FROM pg_stat_database', 'read-only')
+    ).not.toThrow();
+  });
+
+  it('should allow pg_stat_user_tables via sanitizeQuery (internal tools need it)', () => {
+    expect(() =>
+      sanitizeQuery('SELECT * FROM pg_stat_user_tables', 'read-only')
+    ).not.toThrow();
+  });
+});

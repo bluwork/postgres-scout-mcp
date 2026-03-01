@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { DatabaseConnection } from '../types.js';
 import { Logger } from '../utils/logger.js';
-import { executeQuery } from '../utils/database.js';
+import { executeInternalQuery } from '../utils/database.js';
 import { sanitizeIdentifier, assertNoSensitiveCatalogAccess } from '../utils/sanitize.js';
 
 const SuggestIndexesSchema = z.object({
@@ -150,16 +150,16 @@ export async function suggestIndexes(
   `;
 
   const [seqScanResult, fkResult, existingResult, usageResult] = await Promise.all([
-    executeQuery(connection, logger, { query: seqScanQuery, params }),
-    executeQuery(connection, logger, { query: fkWithoutIndexQuery, params }),
-    executeQuery(connection, logger, { query: existingIndexesQuery, params }),
-    executeQuery(connection, logger, { query: indexUsageQuery, params })
+    executeInternalQuery(connection, logger, { query: seqScanQuery, params }),
+    executeInternalQuery(connection, logger, { query: fkWithoutIndexQuery, params }),
+    executeInternalQuery(connection, logger, { query: existingIndexesQuery, params }),
+    executeInternalQuery(connection, logger, { query: indexUsageQuery, params })
   ]);
 
   let queryPatternResult: { rows: any[] } = { rows: [] };
   if (queryPatternQuery) {
     try {
-      queryPatternResult = await executeQuery(connection, logger, { query: queryPatternQuery, params: [] });
+      queryPatternResult = await executeInternalQuery(connection, logger, { query: queryPatternQuery, params: [] });
     } catch {
       // pg_stat_statements might not be available
     }
@@ -339,9 +339,9 @@ export async function suggestPartitioning(
   `;
 
   const [statsResult, columnsResult, partitionResult] = await Promise.all([
-    executeQuery(connection, logger, { query: tableStatsQuery, params: [sanitizedSchema, sanitizedTable] }),
-    executeQuery(connection, logger, { query: columnsQuery, params: [sanitizedSchema, sanitizedTable] }),
-    executeQuery(connection, logger, { query: partitionCheckQuery, params: [sanitizedSchema, sanitizedTable] })
+    executeInternalQuery(connection, logger, { query: tableStatsQuery, params: [sanitizedSchema, sanitizedTable] }),
+    executeInternalQuery(connection, logger, { query: columnsQuery, params: [sanitizedSchema, sanitizedTable] }),
+    executeInternalQuery(connection, logger, { query: partitionCheckQuery, params: [sanitizedSchema, sanitizedTable] })
   ]);
 
   if (statsResult.rows.length === 0) {
@@ -399,7 +399,7 @@ export async function suggestPartitioning(
     `;
 
     try {
-      const distResult = await executeQuery(connection, logger, { query: distQuery, params: [] });
+      const distResult = await executeInternalQuery(connection, logger, { query: distQuery, params: [] });
       if (distResult.rows.length > 0) {
         const dist = distResult.rows[0];
         candidates.push({
@@ -442,7 +442,7 @@ export async function suggestPartitioning(
       `;
 
       try {
-        const cardResult = await executeQuery(connection, logger, { query: cardinalityQuery, params: [] });
+        const cardResult = await executeInternalQuery(connection, logger, { query: cardinalityQuery, params: [] });
         const cardinality = parseInt(cardResult.rows[0]?.cardinality || '0', 10);
 
         if (cardinality > 0 && cardinality <= 20) {
@@ -702,7 +702,7 @@ export async function detectAnomalies(
     `;
 
     try {
-      const result = await executeQuery(connection, logger, { query: queryAnomaliesQuery, params: [] });
+      const result = await executeInternalQuery(connection, logger, { query: queryAnomaliesQuery, params: [] });
 
       for (const row of result.rows) {
         const zScore = parseFloat(row.z_score || '0');
@@ -754,8 +754,8 @@ export async function detectAnomalies(
     `;
 
     const [connResult, maxResult] = await Promise.all([
-      executeQuery(connection, logger, { query: connectionQuery, params: [] }),
-      executeQuery(connection, logger, { query: maxConnectionsQuery, params: [] })
+      executeInternalQuery(connection, logger, { query: connectionQuery, params: [] }),
+      executeInternalQuery(connection, logger, { query: maxConnectionsQuery, params: [] })
     ]);
 
     const maxConnections = parseInt(maxResult.rows[0]?.max_connections || '100', 10);
@@ -834,7 +834,7 @@ export async function detectAnomalies(
       LIMIT 20
     `;
 
-    const bloatResult = await executeQuery(connection, logger, { query: bloatQuery, params: [] });
+    const bloatResult = await executeInternalQuery(connection, logger, { query: bloatQuery, params: [] });
 
     for (const row of bloatResult.rows) {
       const deadPercent = parseFloat(row.dead_percent || '0');
@@ -879,7 +879,7 @@ export async function detectAnomalies(
       WHERE datname = current_database()
     `;
 
-    const errorResult = await executeQuery(connection, logger, { query: errorQuery, params: [] });
+    const errorResult = await executeInternalQuery(connection, logger, { query: errorQuery, params: [] });
 
     if (errorResult.rows.length > 0) {
       const row = errorResult.rows[0];
@@ -982,7 +982,7 @@ export async function optimizeQuery(
 
   let planResult;
   try {
-    planResult = await executeQuery(connection, logger, { query: explainQuery, params: [] });
+    planResult = await executeInternalQuery(connection, logger, { query: explainQuery, params: [] });
   } catch (error) {
     return {
       error: `Query execution failed: ${error instanceof Error ? error.message : String(error)}`,

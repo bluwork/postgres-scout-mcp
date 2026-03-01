@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { DatabaseConnection } from '../types.js';
 import { Logger } from '../utils/logger.js';
-import { executeQuery } from '../utils/database.js';
+import { executeInternalQuery } from '../utils/database.js';
 import { sanitizeIdentifier } from '../utils/sanitize.js';
 
 const GetLiveMetricsSchema = z.object({
@@ -104,11 +104,11 @@ async function collectMetricSnapshot(
   `;
 
   const [activityResult, connectionsResult, transactionsResult, cacheResult, locksResult] = await Promise.all([
-    executeQuery(connection, logger, { query: activityQuery, params: [] }),
-    executeQuery(connection, logger, { query: connectionsQuery, params: [] }),
-    executeQuery(connection, logger, { query: transactionsQuery, params: [] }),
-    executeQuery(connection, logger, { query: cacheQuery, params: [] }),
-    executeQuery(connection, logger, { query: locksQuery, params: [] })
+    executeInternalQuery(connection, logger, { query: activityQuery, params: [] }),
+    executeInternalQuery(connection, logger, { query: connectionsQuery, params: [] }),
+    executeInternalQuery(connection, logger, { query: transactionsQuery, params: [] }),
+    executeInternalQuery(connection, logger, { query: cacheQuery, params: [] }),
+    executeInternalQuery(connection, logger, { query: locksQuery, params: [] })
   ]);
 
   const activity = activityResult.rows[0];
@@ -237,12 +237,12 @@ export async function getHottestTables(
     WHERE schemaname = '${sanitizedSchema}'
   `;
 
-  const beforeResult = await executeQuery(connection, logger, { query: beforeQuery, params: [] });
+  const beforeResult = await executeInternalQuery(connection, logger, { query: beforeQuery, params: [] });
   const beforeStats = new Map(beforeResult.rows.map(r => [r.table_name, r]));
 
   await new Promise(resolve => setTimeout(resolve, sampleDuration));
 
-  const afterResult = await executeQuery(connection, logger, { query: beforeQuery, params: [] });
+  const afterResult = await executeInternalQuery(connection, logger, { query: beforeQuery, params: [] });
 
   const activity = afterResult.rows.map(after => {
     const before = beforeStats.get(after.table_name) || after;
@@ -358,9 +358,9 @@ export async function getTableMetrics(
   `;
 
   const [statsResult, sizeResult, ioResult] = await Promise.all([
-    executeQuery(connection, logger, { query: statsQuery, params: [] }),
-    executeQuery(connection, logger, { query: sizeQuery, params: [] }),
-    executeQuery(connection, logger, { query: ioQuery, params: [] })
+    executeInternalQuery(connection, logger, { query: statsQuery, params: [] }),
+    executeInternalQuery(connection, logger, { query: sizeQuery, params: [] }),
+    executeInternalQuery(connection, logger, { query: ioQuery, params: [] })
   ]);
 
   if (statsResult.rows.length === 0) {

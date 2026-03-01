@@ -107,6 +107,25 @@ const QUERY_DANGEROUS_FUNCTIONS = [
   /\bpg_switch_wal\s*\(/i,
   /\bpg_create_restore_point\s*\(/i,
   /\bpg_logical_emit_message\s*\(/i,
+  // Info disclosure — server metadata (R4-010)
+  /\bversion\s*\(/i,
+  // Info disclosure — role identity (R4-011)
+  /\bcurrent_user\b/i,
+  /\bsession_user\b/i,
+  // Info disclosure — physical paths (R4-012)
+  /\bpg_relation_filepath\s*\(/i,
+  // Info disclosure — WAL/recovery state (R4-013)
+  /\bpg_is_in_recovery\s*\(/i,
+  /\bpg_last_wal_replay_lsn\s*\(/i,
+  /\bpg_current_wal_lsn\s*\(/i,
+  // Info disclosure — privilege enumeration (R4-016)
+  /\bhas_\w+_privilege\s*\(/i,
+  // Info disclosure — transaction IDs (R4-017)
+  /\btxid_current\s*\(/i,
+  /\btxid_current_snapshot\s*\(/i,
+  // DoS — string padding as repeat() alternative (R4-018)
+  /\brpad\s*\(/i,
+  /\blpad\s*\(/i,
 ];
 
 const SENSITIVE_CATALOGS = [
@@ -119,6 +138,7 @@ const SENSITIVE_CATALOGS = [
   /\bpg_stat_ssl\b/i,
   /\bpg_largeobject\b/i,
   /\bpg_largeobject_metadata\b/i,
+  /\bpg_available_extensions\b/i,  // R4-015
 ];
 
 const USER_QUERY_SENSITIVE_CATALOGS = [
@@ -135,6 +155,8 @@ const USER_QUERY_SENSITIVE_CATALOGS = [
   /\binformation_schema\.role_table_grants\b/i,
   /\binformation_schema\.applicable_roles\b/i,
   /\binformation_schema\.role_routine_grants\b/i,
+  /\bpg_stat_database\b/i,        // R4-009
+  /\bpg_stat_user_tables\b/i,     // R4-014
 ];
 
 const CTE_DATA_MODIFYING_PATTERN = /\bAS\s+(NOT\s+)?MATERIALIZED\s*\(\s*(INSERT|UPDATE|DELETE|TRUNCATE)\b|\bAS\s*\(\s*(INSERT|UPDATE|DELETE|TRUNCATE)\b/i;
@@ -342,7 +364,7 @@ function extractMainStatementAfterCTEs(query: string): string | null {
   return null;
 }
 
-export function sanitizeQuery(query: string, mode: DatabaseMode): void {
+export function sanitizeQuery(query: string, mode: DatabaseMode, options?: { internal?: boolean }): void {
   const trimmedQuery = query.trim();
 
   if (!trimmedQuery) {
@@ -361,8 +383,11 @@ export function sanitizeQuery(query: string, mode: DatabaseMode): void {
   }
 
   assertNoMatch(DANGEROUS_PATTERNS, trimmedQuery, 'Potentially dangerous query pattern detected');
-  assertNoMatch(QUERY_DANGEROUS_FUNCTIONS, trimmedQuery, 'Potentially dangerous function call detected');
-  assertNoMatch(SENSITIVE_CATALOGS, trimmedQuery, 'Access to sensitive system catalog is not allowed');
+
+  if (!options?.internal) {
+    assertNoMatch(QUERY_DANGEROUS_FUNCTIONS, trimmedQuery, 'Potentially dangerous function call detected');
+    assertNoMatch(SENSITIVE_CATALOGS, trimmedQuery, 'Access to sensitive system catalog is not allowed');
+  }
 
   if (mode === 'read-only' && CTE_DATA_MODIFYING_PATTERN.test(trimmedQuery)) {
     throw new Error(
@@ -445,17 +470,50 @@ export function validateCondition(condition: string): void {
   }
 }
 
-export function validateInterval(interval: string): void {
+const SHORTHAND_UNITS: Record<string, string> = {
+  s: 'seconds',
+  m: 'minutes',
+  min: 'minutes',
+  h: 'hours',
+  hr: 'hours',
+  d: 'days',
+  w: 'weeks',
+  mo: 'months',
+  y: 'years',
+  yr: 'years',
+};
+
+export function normalizeInterval(interval: string): string {
   if (!interval || !interval.trim()) {
     throw new Error('Interval cannot be empty');
   }
 
-  const validIntervalPattern = /^\d+\s+(second|minute|hour|day|week|month|year)s?$/i;
-  if (!validIntervalPattern.test(interval.trim())) {
-    throw new Error(
-      `Invalid interval format: "${interval}". Use format like "7 days", "2 hours", "30 minutes"`
-    );
+  const trimmed = interval.trim();
+
+  // Already in full format: "7 days", "2 hours"
+  const fullPattern = /^\d+\s+(second|minute|hour|day|week|month|year)s?$/i;
+  if (fullPattern.test(trimmed)) {
+    return trimmed;
   }
+
+  // Shorthand format: "365d", "30m", "1y", "2h", "3mo", "1yr", "5hr", "10min"
+  const shorthandPattern = /^(\d+)(s|min|mo|yr|hr|m|h|d|w|y)$/i;
+  const match = trimmed.match(shorthandPattern);
+  if (match) {
+    const num = match[1];
+    const unit = SHORTHAND_UNITS[match[2].toLowerCase()];
+    if (unit) {
+      return `${num} ${unit}`;
+    }
+  }
+
+  throw new Error(
+    `Invalid interval format: "${interval}". Use format like "7 days", "2 hours", "30 minutes", or shorthand "7d", "2h", "30m"`
+  );
+}
+
+export function validateInterval(interval: string): void {
+  normalizeInterval(interval);
 }
 
 export function validateOrderBy(orderBy: string): void {

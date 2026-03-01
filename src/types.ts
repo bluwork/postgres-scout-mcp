@@ -22,6 +22,7 @@ export interface DatabaseConnection {
 export interface QueryOptions {
   timeout?: number;
   maxRows?: number;
+  internal?: boolean;
 }
 
 export interface QueryParams {

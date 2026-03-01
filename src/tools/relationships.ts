@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { DatabaseConnection } from '../types.js';
 import { Logger } from '../utils/logger.js';
-import { executeQuery } from '../utils/database.js';
+import { executeInternalQuery } from '../utils/database.js';
 import { escapeIdentifier, sanitizeIdentifier } from '../utils/sanitize.js';
 
 const ExploreRelationshipsSchema = z.object({
@@ -39,7 +39,7 @@ export async function exploreRelationships(
     LIMIT 1
   `;
 
-  const pkResult = await executeQuery(connection, logger, {
+  const pkResult = await executeInternalQuery(connection, logger, {
     query: pkQuery,
     params: [`${sanitizedSchema}.${sanitizedTable}`]
   });
@@ -56,7 +56,7 @@ export async function exploreRelationships(
     WHERE ${escapeIdentifier(sanitizeIdentifier(pkColumn))} = $1
   `;
 
-  const recordResult = await executeQuery(connection, logger, {
+  const recordResult = await executeInternalQuery(connection, logger, {
     query: recordQuery,
     params: [recordId]
   });
@@ -83,7 +83,7 @@ export async function exploreRelationships(
       AND c.contype = 'f'
   `;
 
-  const fkResult = await executeQuery(connection, logger, {
+  const fkResult = await executeInternalQuery(connection, logger, {
     query: fkQuery,
     params: [`${sanitizedSchema}.${sanitizedTable}`]
   });
@@ -100,7 +100,7 @@ export async function exploreRelationships(
         WHERE ${escapeIdentifier(fk.ref_column)} = $1
       `;
 
-      const relatedResult = await executeQuery(connection, logger, {
+      const relatedResult = await executeInternalQuery(connection, logger, {
         query: relatedQuery,
         params: [fkValue]
       });
@@ -131,7 +131,7 @@ export async function exploreRelationships(
         AND c.contype = 'f'
     `;
 
-    const reverseFkResult = await executeQuery(connection, logger, {
+    const reverseFkResult = await executeInternalQuery(connection, logger, {
       query: reverseFkQuery,
       params: [`${sanitizedSchema}.${sanitizedTable}`]
     });
@@ -144,7 +144,7 @@ export async function exploreRelationships(
         LIMIT 10
       `;
 
-      const reverseResult = await executeQuery(connection, logger, {
+      const reverseResult = await executeInternalQuery(connection, logger, {
         query: reverseQuery,
         params: [recordId]
       });
@@ -200,7 +200,7 @@ export async function analyzeForeignKeys(
     ORDER BY tbl.relname, c.conname
   `;
 
-  const fkResult = await executeQuery(connection, logger, {
+  const fkResult = await executeInternalQuery(connection, logger, {
     query: fkQuery,
     params: [sanitizedSchema]
   });
@@ -219,7 +219,7 @@ export async function analyzeForeignKeys(
           AND a.attname = $2
       `;
 
-      const indexResult = await executeQuery(connection, logger, {
+      const indexResult = await executeInternalQuery(connection, logger, {
         query: indexQuery,
         params: [`${fk.schema}.${fk.table}`, fk.column]
       });
@@ -248,7 +248,7 @@ export async function analyzeForeignKeys(
           AND r.${escapeIdentifier(fk.ref_column)} IS NULL
       `;
 
-      const orphanResult = await executeQuery(connection, logger, {
+      const orphanResult = await executeInternalQuery(connection, logger, {
         query: orphanQuery
       });
 

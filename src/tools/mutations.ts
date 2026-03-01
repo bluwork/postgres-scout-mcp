@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { DatabaseConnection } from '../types.js';
 import { Logger } from '../utils/logger.js';
-import { executeQuery } from '../utils/database.js';
+import { executeInternalQuery } from '../utils/database.js';
 import { sanitizeIdentifier, escapeIdentifier, parseIntSafe } from '../utils/sanitize.js';
 import { buildWhereClause, WhereCondition, WhereConditionSchema } from '../utils/query-builder.js';
 
@@ -121,8 +121,8 @@ export async function previewUpdate(
   `;
 
   const [countResult, sampleResult] = await Promise.all([
-    executeQuery(connection, logger, { query: countQuery, params: whereResult.params }),
-    executeQuery(connection, logger, { query: sampleQuery, params: whereResult.params })
+    executeInternalQuery(connection, logger, { query: countQuery, params: whereResult.params }),
+    executeInternalQuery(connection, logger, { query: sampleQuery, params: whereResult.params })
   ]);
 
   const affectedCount = parseInt(countResult.rows[0]?.count || '0', 10);
@@ -175,8 +175,8 @@ export async function previewDelete(
   `;
 
   const [countResult, sampleResult] = await Promise.all([
-    executeQuery(connection, logger, { query: countQuery, params: whereResult.params }),
-    executeQuery(connection, logger, { query: sampleQuery, params: whereResult.params })
+    executeInternalQuery(connection, logger, { query: countQuery, params: whereResult.params }),
+    executeInternalQuery(connection, logger, { query: sampleQuery, params: whereResult.params })
   ]);
 
   const deleteCount = parseInt(countResult.rows[0]?.count || '0', 10);
@@ -223,7 +223,7 @@ export async function safeUpdate(
     ${previewWhereResult.clause ? `WHERE ${previewWhereResult.clause}` : ''}
   `;
 
-  const countResult = await executeQuery(connection, logger, { query: countQuery, params: previewWhereResult.params });
+  const countResult = await executeInternalQuery(connection, logger, { query: countQuery, params: previewWhereResult.params });
   const affectedCount = parseInt(countResult.rows[0]?.count || '0', 10);
 
   if (affectedCount > maxRows) {
@@ -241,7 +241,7 @@ export async function safeUpdate(
       ${previewWhereResult.clause ? `WHERE ${previewWhereResult.clause}` : ''}
       LIMIT 5
     `;
-    const sampleResult = await executeQuery(connection, logger, { query: sampleQuery, params: previewWhereResult.params });
+    const sampleResult = await executeInternalQuery(connection, logger, { query: sampleQuery, params: previewWhereResult.params });
 
     return {
       dryRun: true,
@@ -277,7 +277,7 @@ export async function safeUpdate(
     ${whereResult.clause ? `WHERE ${whereResult.clause}` : ''}
   `;
 
-  const result = await executeQuery(connection, logger, { query: updateQuery, params: allParams });
+  const result = await executeInternalQuery(connection, logger, { query: updateQuery, params: allParams });
 
   return {
     success: true,
@@ -318,7 +318,7 @@ export async function safeDelete(
     ${whereResult.clause ? `WHERE ${whereResult.clause}` : ''}
   `;
 
-  const countResult = await executeQuery(connection, logger, { query: countQuery, params: whereResult.params });
+  const countResult = await executeInternalQuery(connection, logger, { query: countQuery, params: whereResult.params });
   const deleteCount = parseInt(countResult.rows[0]?.count || '0', 10);
 
   if (deleteCount > maxRows) {
@@ -336,7 +336,7 @@ export async function safeDelete(
       ${whereResult.clause ? `WHERE ${whereResult.clause}` : ''}
       LIMIT 5
     `;
-    const sampleResult = await executeQuery(connection, logger, { query: sampleQuery, params: whereResult.params });
+    const sampleResult = await executeInternalQuery(connection, logger, { query: sampleQuery, params: whereResult.params });
 
     return {
       dryRun: true,
@@ -354,7 +354,7 @@ export async function safeDelete(
     ${whereResult.clause ? `WHERE ${whereResult.clause}` : ''}
   `;
 
-  const result = await executeQuery(connection, logger, { query: deleteQuery, params: whereResult.params });
+  const result = await executeInternalQuery(connection, logger, { query: deleteQuery, params: whereResult.params });
 
   return {
     success: true,
@@ -459,7 +459,7 @@ export async function safeInsert(
 
     query += ' RETURNING *';
 
-    const result = await executeQuery(connection, logger, { query, params });
+    const result = await executeInternalQuery(connection, logger, { query, params });
     totalInserted += result.rowCount || 0;
     allReturnedRows.push(...result.rows);
   }

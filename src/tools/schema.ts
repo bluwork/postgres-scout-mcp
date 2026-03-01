@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { DatabaseConnection, TableInfo, ColumnInfo, ConstraintInfo, IndexInfo } from '../types.js';
 import { Logger } from '../utils/logger.js';
-import { executeQuery } from '../utils/database.js';
+import { executeInternalQuery } from '../utils/database.js';
 import { formatBytes } from '../utils/query-builder.js';
 
 const ListTablesSchema = z.object({
@@ -33,7 +33,7 @@ export async function listSchemas(
     ORDER BY n.nspname;
   `;
 
-  const result = await executeQuery(connection, logger, { query });
+  const result = await executeInternalQuery(connection, logger, { query });
 
   return {
     schemas: result.rows.map(row => ({
@@ -85,7 +85,7 @@ export async function listTables(
     ORDER BY c.relname;
   `;
 
-  const result = await executeQuery(connection, logger, {
+  const result = await executeInternalQuery(connection, logger, {
     query,
     params: [schema]
   });
@@ -180,7 +180,7 @@ async function getColumns(
     ORDER BY a.attnum;
   `;
 
-  const result = await executeQuery(connection, logger, {
+  const result = await executeInternalQuery(connection, logger, {
     query,
     params: [`${schema}.${table}`]
   });
@@ -216,7 +216,7 @@ async function getConstraints(
     ORDER BY c.conname;
   `;
 
-  const result = await executeQuery(connection, logger, {
+  const result = await executeInternalQuery(connection, logger, {
     query,
     params: [`${schema}.${table}`]
   });
@@ -265,7 +265,7 @@ async function getIndexes(
     ORDER BY i.relname;
   `;
 
-  const result = await executeQuery(connection, logger, {
+  const result = await executeInternalQuery(connection, logger, {
     query,
     params: [`${schema}.${table}`]
   });
@@ -296,7 +296,7 @@ async function getTableStats(
     WHERE c.oid = $1::regclass;
   `;
 
-  const result = await executeQuery(connection, logger, {
+  const result = await executeInternalQuery(connection, logger, {
     query,
     params: [`${schema}.${table}`]
   });

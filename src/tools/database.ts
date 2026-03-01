@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { DatabaseConnection, DatabaseStats } from '../types.js';
 import { Logger } from '../utils/logger.js';
-import { ensureDatabaseExists, executeQuery, getCurrentDatabaseName } from '../utils/database.js';
+import { ensureDatabaseExists, executeInternalQuery, getCurrentDatabaseName } from '../utils/database.js';
 
 const ListDatabasesSchema = z.object({});
 
@@ -28,7 +28,7 @@ export async function listDatabases(
     ORDER BY d.datname;
   `;
 
-  const result = await executeQuery(connection, logger, { query });
+  const result = await executeInternalQuery(connection, logger, { query });
 
   return {
     databases: result.rows.map(row => ({
@@ -91,7 +91,7 @@ async function getSizeStats(
   database: string
 ): Promise<any> {
   const query = `SELECT pg_size_pretty(pg_database_size(current_database())) as size`;
-  const result = await executeQuery(connection, logger, { query });
+  const result = await executeInternalQuery(connection, logger, { query });
   return { size: result.rows[0]?.size || '0' };
 }
 
@@ -108,7 +108,7 @@ async function getObjectCounts(
       (SELECT COUNT(*) FROM pg_catalog.pg_proc) as functions
   `;
 
-  const result = await executeQuery(connection, logger, { query });
+  const result = await executeInternalQuery(connection, logger, { query });
   return {
     tables: parseInt(result.rows[0]?.tables || '0', 10),
     indexes: parseInt(result.rows[0]?.indexes || '0', 10),
@@ -128,7 +128,7 @@ async function getConnectionStats(
       (SELECT setting::int FROM pg_catalog.pg_settings WHERE name = 'max_connections') as max
   `;
 
-  const result = await executeQuery(connection, logger, { query });
+  const result = await executeInternalQuery(connection, logger, { query });
   return {
     active: parseInt(result.rows[0]?.active || '0', 10),
     max: parseInt(result.rows[0]?.max || '100', 10)
@@ -150,7 +150,7 @@ async function getCacheStats(
     WHERE datname = current_database()
   `;
 
-  const result = await executeQuery(connection, logger, { query });
+  const result = await executeInternalQuery(connection, logger, { query });
   return {
     ratio: parseFloat(result.rows[0]?.cache_hit_ratio || '0'),
     transactionRate: parseInt(result.rows[0]?.total_transactions || '0', 10)
@@ -172,7 +172,7 @@ async function getTupleStats(
     WHERE datname = current_database()
   `;
 
-  const result = await executeQuery(connection, logger, { query });
+  const result = await executeInternalQuery(connection, logger, { query });
   const row = result.rows[0] || {};
 
   return {

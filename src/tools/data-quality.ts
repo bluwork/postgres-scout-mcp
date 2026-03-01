@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { DatabaseConnection } from '../types.js';
 import { Logger } from '../utils/logger.js';
-import { executeQuery } from '../utils/database.js';
+import { executeInternalQuery } from '../utils/database.js';
 import { escapeIdentifier, sanitizeIdentifier, validateCondition } from '../utils/sanitize.js';
 
 const FindDuplicatesSchema = z.object({
@@ -79,8 +79,8 @@ export async function findDuplicates(
   `;
 
   const [totalResult, duplicatesResult] = await Promise.all([
-    executeQuery(connection, logger, { query: countQuery }),
-    executeQuery(connection, logger, {
+    executeInternalQuery(connection, logger, { query: countQuery }),
+    executeInternalQuery(connection, logger, {
       query: duplicatesQuery,
       params: [minCount, limit]
     })
@@ -112,7 +112,7 @@ export async function findDuplicates(
           `;
 
           const params = sanitizedColumns.map(col => group[col]);
-          const rowsResult = await executeQuery(connection, logger, {
+          const rowsResult = await executeInternalQuery(connection, logger, {
             query: rowsQuery,
             params
           });
@@ -184,7 +184,7 @@ export async function findMissingValues(
     FROM ${escapeIdentifier(sanitizedSchema)}.${escapeIdentifier(sanitizedTable)}
   `;
 
-  const totalResult = await executeQuery(connection, logger, { query: countQuery });
+  const totalResult = await executeInternalQuery(connection, logger, { query: countQuery });
   const totalRows = parseInt(totalResult.rows[0]?.total_rows || '0', 10);
 
   const analysis: Record<string, any> = {};
@@ -196,7 +196,7 @@ export async function findMissingValues(
       FROM ${escapeIdentifier(sanitizedSchema)}.${escapeIdentifier(sanitizedTable)}
     `;
 
-    const nullResult = await executeQuery(connection, logger, { query: nullCountQuery });
+    const nullResult = await executeInternalQuery(connection, logger, { query: nullCountQuery });
     const nullCount = parseInt(nullResult.rows[0]?.null_count || '0', 10);
     const nullPercentage = totalRows > 0 ? ((nullCount / totalRows) * 100).toFixed(2) : '0';
 
@@ -222,7 +222,7 @@ export async function findMissingValues(
           WHERE ${escapeIdentifier(column)} IS NULL
           LIMIT $1
         `;
-        const sampleResult = await executeQuery(connection, logger, {
+        const sampleResult = await executeInternalQuery(connection, logger, {
           query: sampleQuery,
           params: [limit]
         });
@@ -297,9 +297,9 @@ export async function findOrphans(
   `;
 
   const [orphansResult, countResult, totalResult] = await Promise.all([
-    executeQuery(connection, logger, { query: orphansQuery, params: [limit] }),
-    executeQuery(connection, logger, { query: countQuery }),
-    executeQuery(connection, logger, { query: totalQuery })
+    executeInternalQuery(connection, logger, { query: orphansQuery, params: [limit] }),
+    executeInternalQuery(connection, logger, { query: countQuery }),
+    executeInternalQuery(connection, logger, { query: totalQuery })
   ]);
 
   const orphanCount = parseInt(countResult.rows[0]?.orphan_count || '0', 10);
@@ -370,8 +370,8 @@ export async function checkConstraintViolations(
   `;
 
   const [violationsResult, countResult] = await Promise.all([
-    executeQuery(connection, logger, { query: violationsQuery }),
-    executeQuery(connection, logger, { query: countQuery })
+    executeInternalQuery(connection, logger, { query: violationsQuery }),
+    executeInternalQuery(connection, logger, { query: countQuery })
   ]);
 
   const violationCount = parseInt(countResult.rows[0]?.violation_count || '0', 10);
@@ -422,7 +422,7 @@ export async function analyzeTypeConsistency(
       AND column_name = $3
   `;
 
-  const typeResult = await executeQuery(connection, logger, {
+  const typeResult = await executeInternalQuery(connection, logger, {
     query: typeQuery,
     params: [sanitizedSchema, sanitizedTable, sanitizedColumn]
   });
@@ -444,7 +444,7 @@ export async function analyzeTypeConsistency(
     ) sample
   `;
 
-  const analysisResult = await executeQuery(connection, logger, {
+  const analysisResult = await executeInternalQuery(connection, logger, {
     query: analysisQuery,
     params: [sampleSize]
   });

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { DatabaseConnection } from '../types.js';
 import { Logger } from '../utils/logger.js';
-import { executeQuery } from '../utils/database.js';
+import { executeInternalQuery } from '../utils/database.js';
 
 const GetCurrentActivitySchema = z.object({
   includeIdle: z.boolean().optional().default(false),
@@ -66,8 +66,8 @@ export async function getCurrentActivity(
   `;
 
   const [result, statsResult] = await Promise.all([
-    executeQuery(connection, logger, { query }),
-    executeQuery(connection, logger, { query: statsQuery })
+    executeInternalQuery(connection, logger, { query }),
+    executeInternalQuery(connection, logger, { query: statsQuery })
   ]);
 
   const stats = statsResult.rows[0];
@@ -167,8 +167,8 @@ export async function analyzeLocks(
   `;
 
   const [result, blockingResult] = await Promise.all([
-    executeQuery(connection, logger, { query }),
-    executeQuery(connection, logger, { query: blockingQuery })
+    executeInternalQuery(connection, logger, { query }),
+    executeInternalQuery(connection, logger, { query: blockingQuery })
   ]);
 
   const locks = result.rows.map(row => ({
@@ -255,7 +255,7 @@ export async function getIndexUsage(
     LIMIT 100
   `;
 
-  const result = await executeQuery(connection, logger, {
+  const result = await executeInternalQuery(connection, logger, {
     query,
     params: [schema]
   });
