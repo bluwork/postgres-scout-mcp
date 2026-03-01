@@ -989,15 +989,18 @@ export async function optimizeQuery(
   }
 
   const plan = planResult.rows[0]['QUERY PLAN'][0];
-  const planningTime = plan['Planning Time'];
-  const executionTime = plan['Execution Time'];
-  const totalTime = planningTime + executionTime;
+  const hasAnalyze = plan['Execution Time'] !== undefined;
+  const planningTime = plan['Planning Time'] ?? null;
+  const executionTime = plan['Execution Time'] ?? null;
+  const totalTime = (planningTime != null && executionTime != null)
+    ? planningTime + executionTime
+    : null;
 
   const issues: any[] = [];
   const optimizations: any[] = [];
 
-  // Analyze the plan recursively
-  analyzeNode(plan.Plan, issues, 0);
+  // Analyze the plan recursively — use Plan Rows as fallback when Actual Rows unavailable
+  analyzeNode(plan.Plan, issues, 0, hasAnalyze);
 
   // Generate optimizations based on issues
   let priority = 1;
@@ -1065,12 +1068,15 @@ export async function optimizeQuery(
     }
 
     // Check for missing LIMIT
-    if (!query.toLowerCase().includes('limit') && plan.Plan['Actual Rows'] > 1000) {
+    const rowCount = plan.Plan['Actual Rows'] ?? plan.Plan['Plan Rows'] ?? 0;
+    if (!query.toLowerCase().includes('limit') && rowCount > 1000) {
       optimizations.push({
         type: 'query_rewrite',
         priority: priority++,
         description: 'Add LIMIT clause',
-        rationale: `Query returned ${plan.Plan['Actual Rows']} rows`,
+        rationale: hasAnalyze
+          ? `Query returned ${rowCount} rows`
+          : `Query estimated to return ${rowCount} rows`,
         notes: [
           'If you only need a subset of results, add LIMIT',
           'Consider pagination for large result sets'
@@ -1097,28 +1103,32 @@ export async function optimizeQuery(
   // Sort optimizations by priority
   optimizations.sort((a, b) => a.priority - b.priority);
 
-  // Estimate optimized time
-  let estimatedOptimizedTime = totalTime;
-  for (const opt of optimizations) {
-    if (opt.impact === 'critical') estimatedOptimizedTime *= 0.1;
-    else if (opt.impact === 'high') estimatedOptimizedTime *= 0.3;
-    else if (opt.impact === 'medium') estimatedOptimizedTime *= 0.7;
+  // Estimate optimized time (only meaningful with ANALYZE data)
+  let estimatedOptimizedTime: number | null = totalTime;
+  if (totalTime != null) {
+    for (const opt of optimizations) {
+      if (opt.impact === 'critical') estimatedOptimizedTime! *= 0.1;
+      else if (opt.impact === 'high') estimatedOptimizedTime! *= 0.3;
+      else if (opt.impact === 'medium') estimatedOptimizedTime! *= 0.7;
+    }
   }
 
-  const meetsTarget = targetTimeMs ? totalTime <= targetTimeMs : null;
+  const meetsTarget = (targetTimeMs && totalTime != null) ? totalTime <= targetTimeMs : null;
 
-  return {
+  const result: any = {
     query: query.length > 500 ? query.substring(0, 500) + '...' : query,
     executionPlan: {
-      planningTime: planningTime.toFixed(2) + 'ms',
-      executionTime: executionTime.toFixed(2) + 'ms',
-      totalTime: totalTime.toFixed(2) + 'ms'
+      planningTime: planningTime != null ? planningTime.toFixed(2) + 'ms' : 'N/A',
+      executionTime: executionTime != null ? executionTime.toFixed(2) + 'ms' : 'N/A (ANALYZE unavailable in read-only mode)',
+      totalTime: totalTime != null ? totalTime.toFixed(2) + 'ms' : 'N/A'
     },
     targetTimeMs: targetTimeMs || null,
     meetsTarget,
     issues,
     optimizations,
-    estimatedOptimizedTime: estimatedOptimizedTime.toFixed(2) + 'ms',
+    estimatedOptimizedTime: estimatedOptimizedTime != null
+      ? estimatedOptimizedTime.toFixed(2) + 'ms'
+      : 'N/A',
     summary: {
       issuesFound: issues.length,
       optimizationsAvailable: optimizations.length,
@@ -1126,25 +1136,34 @@ export async function optimizeQuery(
       highImpactIssues: issues.filter(i => i.impact === 'high').length
     }
   };
+
+  if (isReadOnly) {
+    result.estimatedPlanOnly = true;
+    result.note = 'Read-only mode: EXPLAIN ANALYZE unavailable. Timing and row counts are estimated from the query planner, not actual execution.';
+  }
+
+  return result;
 }
 
-function analyzeNode(node: any, issues: any[], depth: number): void {
+function analyzeNode(node: any, issues: any[], depth: number, hasAnalyze: boolean = true): void {
   if (!node) return;
 
   const nodeType = node['Node Type'];
-  const actualRows = node['Actual Rows'] || 0;
+  const actualRows = node['Actual Rows'];
   const planRows = node['Plan Rows'] || 0;
+  const rows = actualRows ?? planRows;
   const actualTime = node['Actual Total Time'] || 0;
 
   // Check for sequential scans on large tables
-  if (nodeType === 'Seq Scan' && actualRows > 1000) {
-    const impact = actualRows > 100000 ? 'critical' : actualRows > 10000 ? 'high' : 'medium';
+  if (nodeType === 'Seq Scan' && rows > 1000) {
+    const impact = rows > 100000 ? 'critical' : rows > 10000 ? 'high' : 'medium';
+    const rowLabel = hasAnalyze ? 'reading' : 'estimated';
     issues.push({
       type: 'sequential_scan',
       table: node['Relation Name'],
-      rows: actualRows,
+      rows,
       impact,
-      description: `Sequential scan on ${node['Relation Name']} reading ${actualRows.toLocaleString()} rows`
+      description: `Sequential scan on ${node['Relation Name']} ${rowLabel} ${rows.toLocaleString()} rows`
     });
   }
 
@@ -1158,17 +1177,17 @@ function analyzeNode(node: any, issues: any[], depth: number): void {
   }
 
   // Check for nested loops with high row counts
-  if (nodeType === 'Nested Loop' && actualRows > 1000) {
+  if (nodeType === 'Nested Loop' && rows > 1000) {
     issues.push({
       type: 'nested_loop',
-      rows: actualRows,
-      impact: actualRows > 10000 ? 'high' : 'medium',
-      description: `Nested loop join processing ${actualRows.toLocaleString()} rows`
+      rows,
+      impact: rows > 10000 ? 'high' : 'medium',
+      description: `Nested loop join processing ${rows.toLocaleString()} rows`
     });
   }
 
-  // Check for bad row estimates (can indicate stale statistics)
-  if (planRows > 0 && actualRows > 0) {
+  // Check for bad row estimates (can indicate stale statistics) — only with ANALYZE
+  if (hasAnalyze && planRows > 0 && actualRows > 0) {
     const ratio = actualRows / planRows;
     if (ratio > 10 || ratio < 0.1) {
       issues.push({
@@ -1195,7 +1214,7 @@ function analyzeNode(node: any, issues: any[], depth: number): void {
   // Recursively analyze child nodes
   if (node.Plans) {
     for (const childNode of node.Plans) {
-      analyzeNode(childNode, issues, depth + 1);
+      analyzeNode(childNode, issues, depth + 1, hasAnalyze);
     }
   }
 }

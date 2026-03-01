@@ -147,7 +147,7 @@ function getToolDescription(name: string, mode: string): string {
     suggestIndexes: 'Analyze query patterns and table scans to recommend missing indexes',
     suggestPartitioning: 'Analyze large tables and recommend partitioning strategies',
     detectAnomalies: 'Detect anomalies in query performance, connections, and data patterns',
-    optimizeQuery: 'Analyze a specific query and provide optimization recommendations',
+    optimizeQuery: `Analyze a specific query and provide optimization recommendations${mode === 'read-only' ? ' (estimated plan only — ANALYZE unavailable)' : ''}`,
 
     // Mutation tools (safe write operations)
     previewUpdate: 'Preview which rows would be affected by an UPDATE without modifying data',
