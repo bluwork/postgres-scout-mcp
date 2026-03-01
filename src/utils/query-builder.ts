@@ -21,24 +21,24 @@ const ComparisonConditionSchema = z.object({
   field: z.string(),
   op: ComparisonOpSchema,
   value: z.union([z.string(), z.number(), z.boolean()])
-});
+}).strict();
 
 const InConditionSchema = z.object({
   field: z.string(),
   op: z.enum(['IN', 'NOT IN']),
   value: z.array(z.union([z.string(), z.number()])).min(1)
-});
+}).strict();
 
 const NullConditionSchema = z.object({
   field: z.string(),
   op: z.enum(['IS NULL', 'IS NOT NULL'])
-});
+}).strict();
 
 const BetweenConditionSchema = z.object({
   field: z.string(),
   op: z.literal('BETWEEN'),
   value: z.tuple([z.union([z.string(), z.number()]), z.union([z.string(), z.number()])])
-});
+}).strict();
 
 const LeafConditionSchema = z.union([
   ComparisonConditionSchema,
@@ -50,8 +50,8 @@ const LeafConditionSchema = z.union([
 export const WhereConditionSchema: z.ZodType<WhereCondition> = z.lazy(() =>
   z.union([
     LeafConditionSchema,
-    z.object({ and: z.array(WhereConditionSchema).min(1) }),
-    z.object({ or: z.array(WhereConditionSchema).min(1) })
+    z.object({ and: z.array(WhereConditionSchema).min(1) }).strict(),
+    z.object({ or: z.array(WhereConditionSchema).min(1) }).strict()
   ])
 );
 

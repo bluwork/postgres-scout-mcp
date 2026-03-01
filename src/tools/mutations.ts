@@ -27,7 +27,7 @@ export const PreviewDeleteSchema = z.object({
 export const SafeUpdateSchema = z.object({
   table: z.string(),
   schema: z.string().optional().default('public'),
-  set: z.record(z.any()),
+  set: z.record(z.any()).refine(obj => Object.keys(obj).length > 0, { message: 'SET must have at least one column' }),
   where: z.array(WhereConditionSchema),
   dryRun: z.boolean().optional().default(false),
   maxRows: z.number().optional().default(1000),
@@ -53,12 +53,15 @@ export const SafeDeleteSchema = z.object({
   allowEmptyWhere: z.boolean().optional().default(false)
 });
 
-function validateWhereClause(where: WhereCondition[], allowEmpty: boolean): { valid: boolean; warning?: string } {
+function validateWhereClause(where: WhereCondition[], allowEmpty: boolean, context: 'preview' | 'mutate' = 'mutate'): { valid: boolean; warning?: string } {
   if (where.length === 0) {
     if (!allowEmpty) {
+      const hint = context === 'preview'
+        ? 'Provide at least one WHERE condition.'
+        : 'Set allowEmptyWhere=true to proceed.';
       return {
         valid: false,
-        warning: 'No WHERE conditions provided. This would affect ALL rows. Set allowEmptyWhere=true to proceed.'
+        warning: `No WHERE conditions provided. This would affect ALL rows. ${hint}`
       };
     }
     return {
@@ -94,7 +97,7 @@ export async function previewUpdate(
   const sanitizedSchema = sanitizeIdentifier(schema);
   const sanitizedTable = sanitizeIdentifier(table);
 
-  const validation = validateWhereClause(where, false);
+  const validation = validateWhereClause(where, false, 'preview');
   if (!validation.valid) {
     return {
       blocked: true,
@@ -148,7 +151,7 @@ export async function previewDelete(
   const sanitizedSchema = sanitizeIdentifier(schema);
   const sanitizedTable = sanitizeIdentifier(table);
 
-  const validation = validateWhereClause(where, false);
+  const validation = validateWhereClause(where, false, 'preview');
   if (!validation.valid) {
     return {
       blocked: true,

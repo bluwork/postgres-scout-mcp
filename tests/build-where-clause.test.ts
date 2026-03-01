@@ -342,4 +342,18 @@ describe('WhereConditionSchema: Zod validation', () => {
     const result = WhereConditionSchema.safeParse({});
     expect(result.success).toBe(false);
   });
+
+  it('should reject mixed leaf and group keys', () => {
+    const result = WhereConditionSchema.safeParse({
+      field: 'id', op: '=', value: 1, and: [{ field: 'x', op: '=', value: 2 }]
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it('should reject group with extra keys', () => {
+    const result = WhereConditionSchema.safeParse({
+      or: [{ field: 'id', op: '=', value: 1 }], field: 'extra'
+    });
+    expect(result.success).toBe(false);
+  });
 });

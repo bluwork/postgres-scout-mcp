@@ -1,6 +1,5 @@
 import { describe, it, expect } from 'vitest';
 
-// These schemas need to be exported from mutations.ts
 import { PreviewUpdateSchema, PreviewDeleteSchema, SafeUpdateSchema, SafeDeleteSchema } from '../../src/tools/mutations.js';
 
 describe('Mutation schemas accept structured WhereCondition', () => {
@@ -61,5 +60,14 @@ describe('Mutation schemas accept structured WhereCondition', () => {
       allowEmptyWhere: true
     });
     expect(result.success).toBe(true);
+  });
+
+  it('SafeUpdateSchema should reject empty set object', () => {
+    const result = SafeUpdateSchema.safeParse({
+      table: 'users',
+      set: {},
+      where: [{ field: 'id', op: '=', value: 1 }]
+    });
+    expect(result.success).toBe(false);
   });
 });
