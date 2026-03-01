@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { DatabaseConnection } from '../types.js';
 import { Logger } from '../utils/logger.js';
 import { executeQuery } from '../utils/database.js';
-import { sanitizeIdentifier, parseIntSafe } from '../utils/sanitize.js';
+import { sanitizeIdentifier, escapeIdentifier, parseIntSafe } from '../utils/sanitize.js';
 import { buildWhereClause, WhereCondition, WhereConditionSchema } from '../utils/query-builder.js';
 
 function clampMaxRows(clientMaxRows: number): number {
@@ -211,16 +211,16 @@ export async function safeUpdate(
     };
   }
 
-  // For count and sample queries, build WHERE with startParam=1 (no SET params)
-  const countWhereResult = buildWhereClause(where);
+  // Build WHERE once for count/sample queries (startParam=1, no SET params)
+  const previewWhereResult = buildWhereClause(where);
 
   const countQuery = `
     SELECT COUNT(*) as count
     FROM ${sanitizedSchema}.${sanitizedTable}
-    ${countWhereResult.clause ? `WHERE ${countWhereResult.clause}` : ''}
+    ${previewWhereResult.clause ? `WHERE ${previewWhereResult.clause}` : ''}
   `;
 
-  const countResult = await executeQuery(connection, logger, { query: countQuery, params: countWhereResult.params });
+  const countResult = await executeQuery(connection, logger, { query: countQuery, params: previewWhereResult.params });
   const affectedCount = parseInt(countResult.rows[0]?.count || '0', 10);
 
   if (affectedCount > maxRows) {
@@ -232,14 +232,13 @@ export async function safeUpdate(
   }
 
   if (dryRun) {
-    const sampleWhereResult = buildWhereClause(where);
     const sampleQuery = `
       SELECT *
       FROM ${sanitizedSchema}.${sanitizedTable}
-      ${sampleWhereResult.clause ? `WHERE ${sampleWhereResult.clause}` : ''}
+      ${previewWhereResult.clause ? `WHERE ${previewWhereResult.clause}` : ''}
       LIMIT 5
     `;
-    const sampleResult = await executeQuery(connection, logger, { query: sampleQuery, params: sampleWhereResult.params });
+    const sampleResult = await executeQuery(connection, logger, { query: sampleQuery, params: previewWhereResult.params });
 
     return {
       dryRun: true,
@@ -259,7 +258,7 @@ export async function safeUpdate(
   let paramIndex = 1;
 
   for (const [column, value] of Object.entries(set)) {
-    setClauses.push(`${sanitizeIdentifier(column)} = $${paramIndex}`);
+    setClauses.push(`${escapeIdentifier(sanitizeIdentifier(column))} = $${paramIndex}`);
     setParams.push(value);
     paramIndex++;
   }
@@ -328,14 +327,13 @@ export async function safeDelete(
   }
 
   if (dryRun) {
-    const sampleWhereResult = buildWhereClause(where);
     const sampleQuery = `
       SELECT *
       FROM ${sanitizedSchema}.${sanitizedTable}
-      ${sampleWhereResult.clause ? `WHERE ${sampleWhereResult.clause}` : ''}
+      ${whereResult.clause ? `WHERE ${whereResult.clause}` : ''}
       LIMIT 5
     `;
-    const sampleResult = await executeQuery(connection, logger, { query: sampleQuery, params: sampleWhereResult.params });
+    const sampleResult = await executeQuery(connection, logger, { query: sampleQuery, params: whereResult.params });
 
     return {
       dryRun: true,
@@ -348,14 +346,12 @@ export async function safeDelete(
     };
   }
 
-  const deleteWhereResult = buildWhereClause(where);
-
   const deleteQuery = `
     DELETE FROM ${sanitizedSchema}.${sanitizedTable}
-    ${deleteWhereResult.clause ? `WHERE ${deleteWhereResult.clause}` : ''}
+    ${whereResult.clause ? `WHERE ${whereResult.clause}` : ''}
   `;
 
-  const result = await executeQuery(connection, logger, { query: deleteQuery, params: deleteWhereResult.params });
+  const result = await executeQuery(connection, logger, { query: deleteQuery, params: whereResult.params });
 
   return {
     success: true,
