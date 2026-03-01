@@ -64,6 +64,40 @@ export interface WhereClauseResult {
 
 const MAX_SAFE_BETWEEN_RANGE = 1_000_000_000; // 1 billion — any range wider than this is suspicious
 
+function checkLeafTriviallyTrue(condition: WhereCondition): void {
+  if ('and' in condition) {
+    for (const c of condition.and) checkLeafTriviallyTrue(c);
+    return;
+  }
+  if ('or' in condition) {
+    for (const c of condition.or) checkLeafTriviallyTrue(c);
+    return;
+  }
+
+  // LIKE/ILIKE '%' or '%%'
+  if ((condition.op === 'LIKE' || condition.op === 'ILIKE') && 'value' in condition) {
+    const val = String(condition.value);
+    if (/^%+$/.test(val)) {
+      throw new Error(
+        `Trivially true condition detected: ${condition.op} '${val}' matches all rows. Use a more specific pattern.`
+      );
+    }
+  }
+
+  // BETWEEN with extreme numeric range
+  if (condition.op === 'BETWEEN' && 'value' in condition) {
+    const [low, high] = condition.value;
+    if (typeof low === 'number' && typeof high === 'number') {
+      const range = high - low;
+      if (range >= MAX_SAFE_BETWEEN_RANGE) {
+        throw new Error(
+          `Trivially true condition detected: BETWEEN ${low} AND ${high} spans ${range.toLocaleString()} values. Use a narrower range.`
+        );
+      }
+    }
+  }
+}
+
 function assertNotTriviallyTrue(conditions: WhereCondition[]): void {
   // Flatten: if there's exactly one top-level condition and it's an AND group, unwrap it
   let effective = conditions;
@@ -81,32 +115,9 @@ function assertNotTriviallyTrue(conditions: WhereCondition[]): void {
     }
   }
 
-  // Check each leaf condition for trivially-true patterns
+  // Recursively check all leaf conditions for trivially-true patterns
   for (const condition of effective) {
-    if ('and' in condition || 'or' in condition) continue;
-
-    // LIKE/ILIKE '%' or '%%'
-    if ((condition.op === 'LIKE' || condition.op === 'ILIKE') && 'value' in condition) {
-      const val = String(condition.value);
-      if (/^%+$/.test(val)) {
-        throw new Error(
-          `Trivially true condition detected: ${condition.op} '${val}' matches all rows. Use a more specific pattern.`
-        );
-      }
-    }
-
-    // BETWEEN with extreme numeric range
-    if (condition.op === 'BETWEEN' && 'value' in condition) {
-      const [low, high] = condition.value;
-      if (typeof low === 'number' && typeof high === 'number') {
-        const range = high - low;
-        if (range >= MAX_SAFE_BETWEEN_RANGE) {
-          throw new Error(
-            `Trivially true condition detected: BETWEEN ${low} AND ${high} spans ${range.toLocaleString()} values. Use a narrower range.`
-          );
-        }
-      }
-    }
+    checkLeafTriviallyTrue(condition);
   }
 }
 

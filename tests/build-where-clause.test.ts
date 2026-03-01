@@ -455,4 +455,38 @@ describe('buildWhereClause: trivially-true condition detection (R3-019/020/021)'
     ];
     expect(() => buildWhereClause(conditions)).toThrow(/trivially true/i);
   });
+
+  // Recursive detection: trivially-true inside nested OR/AND groups
+  it('should reject LIKE % nested inside OR group', () => {
+    const conditions: WhereCondition[] = [
+      { or: [
+        { field: 'name', op: 'LIKE', value: '%' },
+        { field: 'status', op: '=', value: 'active' }
+      ]}
+    ];
+    expect(() => buildWhereClause(conditions)).toThrow(/trivially true/i);
+  });
+
+  it('should reject extreme BETWEEN nested inside AND group', () => {
+    const conditions: WhereCondition[] = [
+      { and: [
+        { field: 'id', op: 'BETWEEN', value: [-2147483648, 2147483647] },
+        { field: 'status', op: '=', value: 'active' }
+      ]}
+    ];
+    expect(() => buildWhereClause(conditions)).toThrow(/trivially true/i);
+  });
+
+  it('should reject ILIKE % deeply nested in OR inside AND', () => {
+    const conditions: WhereCondition[] = [
+      { and: [
+        { or: [
+          { field: 'name', op: 'ILIKE', value: '%%' },
+          { field: 'role', op: '=', value: 'admin' }
+        ]},
+        { field: 'active', op: '=', value: true }
+      ]}
+    ];
+    expect(() => buildWhereClause(conditions)).toThrow(/trivially true/i);
+  });
 });
