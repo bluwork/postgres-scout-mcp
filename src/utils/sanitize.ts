@@ -345,22 +345,6 @@ export function escapeIdentifier(identifier: string): string {
   return `"${identifier.replace(/"/g, '""')}"`;
 }
 
-export function buildWhereClause(conditions: Record<string, any>): { clause: string; params: any[] } {
-  const params: any[] = [];
-  const clauses: string[] = [];
-
-  Object.entries(conditions).forEach(([key, value]) => {
-    const identifier = sanitizeIdentifier(key);
-    params.push(value);
-    clauses.push(`${escapeIdentifier(identifier)} = $${params.length}`);
-  });
-
-  return {
-    clause: clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '',
-    params
-  };
-}
-
 export function validateUserWhereClause(where: string): void {
   if (!where || !where.trim()) {
     throw new Error('WHERE clause cannot be empty');
@@ -434,27 +418,6 @@ export function parseIntSafe(value: string, defaultValue: number): number {
     return defaultValue;
   }
   return parsed;
-}
-
-export function validateRawSetClause(set: string): void {
-  if (!set || !set.trim()) {
-    throw new Error('SET clause cannot be empty');
-  }
-
-  const trimmed = set.trim();
-
-  assertNoMatch(WHERE_DANGEROUS_PATTERNS, trimmed, 'Potentially dangerous pattern detected in SET clause');
-
-  const openParens = (trimmed.match(/\(/g) || []).length;
-  const closeParens = (trimmed.match(/\)/g) || []).length;
-  if (openParens !== closeParens) {
-    throw new Error('Unbalanced parentheses in SET clause');
-  }
-
-  const singleQuotes = (trimmed.match(/'/g) || []).length;
-  if (singleQuotes % 2 !== 0) {
-    throw new Error('Unbalanced quotes in SET clause');
-  }
 }
 
 const PG_ERROR_CATEGORIES: Array<{ pattern: RegExp; message: (match: RegExpMatchArray) => string }> = [

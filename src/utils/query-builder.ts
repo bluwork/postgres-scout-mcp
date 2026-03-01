@@ -1,80 +1,145 @@
-import { escapeIdentifier, sanitizeIdentifier } from './sanitize.js';
+import { sanitizeIdentifier, escapeIdentifier } from './sanitize.js';
+import { z } from 'zod';
 
-export interface SelectOptions {
-  schema?: string;
-  columns?: string[];
-  where?: string;
-  orderBy?: string;
-  limit?: number;
-  offset?: number;
+// --- Types ---
+
+export type ComparisonOp = '=' | '!=' | '>' | '<' | '>=' | '<=' | 'LIKE' | 'ILIKE';
+
+export type WhereCondition =
+  | { field: string; op: ComparisonOp; value: string | number | boolean }
+  | { field: string; op: 'IN'; value: (string | number)[] }
+  | { field: string; op: 'NOT IN'; value: (string | number)[] }
+  | { field: string; op: 'IS NULL' }
+  | { field: string; op: 'IS NOT NULL' }
+  | { field: string; op: 'BETWEEN'; value: [string | number, string | number] }
+  | { and: WhereCondition[] }
+  | { or: WhereCondition[] };
+
+const ComparisonOpSchema = z.enum(['=', '!=', '>', '<', '>=', '<=', 'LIKE', 'ILIKE']);
+
+const ComparisonConditionSchema = z.object({
+  field: z.string(),
+  op: ComparisonOpSchema,
+  value: z.union([z.string(), z.number(), z.boolean()])
+}).strict();
+
+const InConditionSchema = z.object({
+  field: z.string(),
+  op: z.enum(['IN', 'NOT IN']),
+  value: z.array(z.union([z.string(), z.number()])).min(1)
+}).strict();
+
+const NullConditionSchema = z.object({
+  field: z.string(),
+  op: z.enum(['IS NULL', 'IS NOT NULL'])
+}).strict();
+
+const BetweenConditionSchema = z.object({
+  field: z.string(),
+  op: z.literal('BETWEEN'),
+  value: z.tuple([z.union([z.string(), z.number()]), z.union([z.string(), z.number()])])
+}).strict();
+
+const LeafConditionSchema = z.union([
+  ComparisonConditionSchema,
+  InConditionSchema,
+  NullConditionSchema,
+  BetweenConditionSchema
+]);
+
+export const WhereConditionSchema: z.ZodType<WhereCondition> = z.lazy(() =>
+  z.union([
+    LeafConditionSchema,
+    z.object({ and: z.array(WhereConditionSchema).min(1) }).strict(),
+    z.object({ or: z.array(WhereConditionSchema).min(1) }).strict()
+  ])
+);
+
+export interface WhereClauseResult {
+  clause: string;
+  params: any[];
 }
 
-export function buildSelectQuery(table: string, options: SelectOptions = {}): string {
-  const {
-    schema = 'public',
-    columns = ['*'],
-    where,
-    orderBy,
-    limit,
-    offset
-  } = options;
+// --- Builder ---
 
-  const sanitizedSchema = sanitizeIdentifier(schema);
-  const sanitizedTable = sanitizeIdentifier(table);
-  const sanitizedColumns = columns.map(col =>
-    col === '*' ? '*' : escapeIdentifier(sanitizeIdentifier(col))
-  );
-
-  const parts = [
-    'SELECT',
-    sanitizedColumns.join(', '),
-    'FROM',
-    `${escapeIdentifier(sanitizedSchema)}.${escapeIdentifier(sanitizedTable)}`
-  ];
-
-  if (where) {
-    parts.push('WHERE', where);
+function buildCondition(
+  condition: WhereCondition,
+  paramCounter: { value: number },
+  params: any[]
+): string {
+  // AND group
+  if ('and' in condition) {
+    const parts = condition.and.map(c => buildCondition(c, paramCounter, params));
+    return parts.length === 1 ? parts[0] : `(${parts.join(' AND ')})`;
   }
 
-  if (orderBy) {
-    parts.push('ORDER BY', orderBy);
+  // OR group
+  if ('or' in condition) {
+    const parts = condition.or.map(c => buildCondition(c, paramCounter, params));
+    return parts.length === 1 ? parts[0] : `(${parts.join(' OR ')})`;
   }
 
-  if (limit !== undefined) {
-    parts.push(`LIMIT ${parseInt(String(limit), 10)}`);
+  // Leaf condition — sanitize and escape the field name
+  const escapedField = escapeIdentifier(sanitizeIdentifier(condition.field));
+
+  if (condition.op === 'IS NULL') {
+    return `${escapedField} IS NULL`;
   }
 
-  if (offset !== undefined) {
-    parts.push(`OFFSET ${parseInt(String(offset), 10)}`);
+  if (condition.op === 'IS NOT NULL') {
+    return `${escapedField} IS NOT NULL`;
   }
 
-  return parts.join(' ');
+  if (condition.op === 'IN' || condition.op === 'NOT IN') {
+    if (condition.value.length === 0) {
+      throw new Error(`${condition.op} requires at least one value`);
+    }
+    const placeholders = condition.value.map(v => {
+      params.push(v);
+      return `$${paramCounter.value++}`;
+    });
+    return `${escapedField} ${condition.op} (${placeholders.join(', ')})`;
+  }
+
+  if (condition.op === 'BETWEEN') {
+    const p1 = `$${paramCounter.value++}`;
+    params.push(condition.value[0]);
+    const p2 = `$${paramCounter.value++}`;
+    params.push(condition.value[1]);
+    return `${escapedField} BETWEEN ${p1} AND ${p2}`;
+  }
+
+  // Comparison operators: =, !=, >, <, >=, <=, LIKE, ILIKE
+  const placeholder = `$${paramCounter.value++}`;
+  params.push(condition.value);
+  return `${escapedField} ${condition.op} ${placeholder}`;
 }
 
-export function buildCountQuery(table: string, schema: string = 'public', where?: string): string {
-  const sanitizedSchema = sanitizeIdentifier(schema);
-  const sanitizedTable = sanitizeIdentifier(table);
-
-  const parts = [
-    'SELECT COUNT(*) as count',
-    'FROM',
-    `${escapeIdentifier(sanitizedSchema)}.${escapeIdentifier(sanitizedTable)}`
-  ];
-
-  if (where) {
-    parts.push('WHERE', where);
+export function buildWhereClause(
+  conditions: WhereCondition[],
+  startParam: number = 1
+): WhereClauseResult {
+  if (conditions.length === 0) {
+    return { clause: '', params: [] };
   }
 
-  return parts.join(' ');
+  const params: any[] = [];
+  const paramCounter = { value: startParam };
+  const parts = conditions.map(c => buildCondition(c, paramCounter, params));
+
+  return {
+    clause: parts.join(' AND '),
+    params
+  };
 }
+
+// --- Formatting utilities (unchanged) ---
 
 export function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 Bytes';
-
   const k = 1024;
   const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
-
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
