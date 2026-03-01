@@ -52,47 +52,57 @@ describe('validateCondition: injection prevention (issue #15)', () => {
 });
 
 // === Issue #16: Always-true WHERE clause bypass in mutation protection ===
+// With structured WhereCondition, tautologies like 1=1 or 'a'='a' are impossible
+// to express. The only "affect all rows" scenario is an empty conditions array.
 import { _testNormalizeWhereForSafety } from '../src/tools/mutations.js';
 
-describe('normalizeWhereForSafety: always-true bypass (issue #16)', () => {
-  it('should detect 1=1 tautology', () => {
-    expect(_testNormalizeWhereForSafety('1=1')).toBe(true);
+describe('normalizeWhereForSafety: empty WHERE protection (issue #16)', () => {
+  it('should flag empty conditions array as dangerous', () => {
+    expect(_testNormalizeWhereForSafety([])).toBe(true);
   });
 
-  it('should detect wrapped (1=1)', () => {
-    expect(_testNormalizeWhereForSafety('(1=1)')).toBe(true);
+  it('should not flag single equality condition', () => {
+    expect(_testNormalizeWhereForSafety([{ field: 'id', op: '=', value: 1 }])).toBe(false);
   });
 
-  it('should detect "true"', () => {
-    expect(_testNormalizeWhereForSafety('true')).toBe(true);
+  it('should not flag comparison condition', () => {
+    expect(_testNormalizeWhereForSafety([{ field: 'age', op: '>', value: 18 }])).toBe(false);
   });
 
-  it('should detect numeric tautology 2=2', () => {
-    expect(_testNormalizeWhereForSafety('2=2')).toBe(true);
+  it('should not flag multiple conditions', () => {
+    expect(_testNormalizeWhereForSafety([
+      { field: 'status', op: '=', value: 'active' },
+      { field: 'role', op: '=', value: 'admin' }
+    ])).toBe(false);
   });
 
-  it('should detect OR-based tautology: 1=1 OR anything', () => {
-    expect(_testNormalizeWhereForSafety("1=1 OR name = 'x'")).toBe(true);
+  it('should not flag IS NULL condition', () => {
+    expect(_testNormalizeWhereForSafety([{ field: 'deleted_at', op: 'IS NULL' }])).toBe(false);
   });
 
-  it('should detect string tautology: a=a pattern', () => {
-    expect(_testNormalizeWhereForSafety("'a'='a'")).toBe(true);
+  it('should not flag IN condition', () => {
+    expect(_testNormalizeWhereForSafety([{ field: 'id', op: 'IN', value: [1, 2, 3] }])).toBe(false);
   });
 
-  it('should detect NOT false tautology', () => {
-    expect(_testNormalizeWhereForSafety('NOT false')).toBe(true);
+  it('should not flag BETWEEN condition', () => {
+    expect(_testNormalizeWhereForSafety([{ field: 'age', op: 'BETWEEN', value: [18, 65] }])).toBe(false);
   });
 
-  it('should not flag legitimate conditions', () => {
-    expect(_testNormalizeWhereForSafety("id = 1")).toBe(false);
+  it('should not flag nested AND/OR conditions', () => {
+    expect(_testNormalizeWhereForSafety([
+      { or: [
+        { field: 'role', op: '=', value: 'admin' },
+        { field: 'role', op: '=', value: 'moderator' }
+      ]}
+    ])).toBe(false);
   });
 
-  it('should not flag conditions with different values', () => {
-    expect(_testNormalizeWhereForSafety("age > 18")).toBe(false);
+  it('should not flag LIKE condition', () => {
+    expect(_testNormalizeWhereForSafety([{ field: 'name', op: 'LIKE', value: '%john%' }])).toBe(false);
   });
 
-  it('should not flag complex legitimate conditions', () => {
-    expect(_testNormalizeWhereForSafety("status = 'active' AND role = 'admin'")).toBe(false);
+  it('should not flag ILIKE condition', () => {
+    expect(_testNormalizeWhereForSafety([{ field: 'email', op: 'ILIKE', value: '%@example.com' }])).toBe(false);
   });
 });
 

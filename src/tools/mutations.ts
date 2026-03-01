@@ -2,33 +2,33 @@ import { z } from 'zod';
 import { DatabaseConnection } from '../types.js';
 import { Logger } from '../utils/logger.js';
 import { executeQuery } from '../utils/database.js';
-import { sanitizeIdentifier, validateUserWhereClause, validateRawSetClause, parseIntSafe } from '../utils/sanitize.js';
+import { sanitizeIdentifier, parseIntSafe } from '../utils/sanitize.js';
+import { buildWhereClause, WhereCondition, WhereConditionSchema } from '../utils/query-builder.js';
 
 function clampMaxRows(clientMaxRows: number): number {
   const serverMax = parseIntSafe(process.env.MAX_MUTATION_ROWS || '10000', 10000);
   return Math.min(clientMaxRows, serverMax);
 }
 
-const PreviewUpdateSchema = z.object({
+export const PreviewUpdateSchema = z.object({
   table: z.string(),
   schema: z.string().optional().default('public'),
-  where: z.string(),
+  where: z.array(WhereConditionSchema),
   limit: z.number().optional().default(5)
 });
 
-const PreviewDeleteSchema = z.object({
+export const PreviewDeleteSchema = z.object({
   table: z.string(),
   schema: z.string().optional().default('public'),
-  where: z.string(),
+  where: z.array(WhereConditionSchema),
   limit: z.number().optional().default(5)
 });
 
-const SafeUpdateSchema = z.object({
+export const SafeUpdateSchema = z.object({
   table: z.string(),
   schema: z.string().optional().default('public'),
-  set: z.union([z.string(), z.record(z.any())]),
-  where: z.string(),
-  allowRawSet: z.boolean().optional().default(false),
+  set: z.record(z.any()),
+  where: z.array(WhereConditionSchema),
   dryRun: z.boolean().optional().default(false),
   maxRows: z.number().optional().default(1000),
   allowEmptyWhere: z.boolean().optional().default(false)
@@ -44,75 +44,28 @@ const SafeInsertSchema = z.object({
   onConflict: z.enum(['error', 'skip']).optional().default('error'),
 });
 
-const SafeDeleteSchema = z.object({
+export const SafeDeleteSchema = z.object({
   table: z.string(),
   schema: z.string().optional().default('public'),
-  where: z.string(),
+  where: z.array(WhereConditionSchema),
   dryRun: z.boolean().optional().default(false),
   maxRows: z.number().optional().default(1000),
   allowEmptyWhere: z.boolean().optional().default(false)
 });
 
-function isAlwaysTrueWhere(where: string): boolean {
-  let normalized = where.trim().toLowerCase().replace(/\s+/g, '');
-
-  // Strip wrapping parentheses like ((1=1))
-  while (normalized.startsWith('(') && normalized.endsWith(')')) {
-    normalized = normalized.slice(1, -1).trim();
-  }
-
-  if (normalized === '' || normalized === 'true' || normalized === 'notfalse') {
-    return true;
-  }
-
-  // Detect N=N numeric tautologies (1=1, 2=2, etc.)
-  if (/^\d+=\d+$/.test(normalized)) {
-    const [left, right] = normalized.split('=');
-    if (left === right) return true;
-  }
-
-  // Detect string tautologies ('a'='a', 'x'='x', etc.)
-  if (/^'[^']*'='[^']*'$/.test(normalized)) {
-    const match = normalized.match(/^('[^']*')=('[^']*')$/);
-    if (match && match[1] === match[2]) return true;
-  }
-
-  // Detect OR-based tautologies: split on OR before whitespace stripping
-  const lowerTrimmed = where.trim().toLowerCase();
-  const orBranches = lowerTrimmed.split(/\bor\b/);
-  if (orBranches.length > 1) {
-    for (const branch of orBranches) {
-      let b = branch.trim().replace(/\s+/g, '').replace(/^\(+|\)+$/g, '');
-      if (b === '1=1' || b === 'true' || b === 'notfalse') {
-        return true;
-      }
-      if (/^\d+=\d+$/.test(b)) {
-        const [l, r] = b.split('=');
-        if (l === r) return true;
-      }
-    }
-  }
-
-  return false;
-}
-
-function validateWhereClause(where: string, allowEmpty: boolean): { valid: boolean; warning?: string } {
-  const trimmed = where.trim();
-  const isAlwaysTrue = !trimmed || isAlwaysTrueWhere(where);
-
-  if (!trimmed || isAlwaysTrue) {
+function validateWhereClause(where: WhereCondition[], allowEmpty: boolean): { valid: boolean; warning?: string } {
+  if (where.length === 0) {
     if (!allowEmpty) {
       return {
         valid: false,
-        warning: `Dangerous WHERE clause detected: "${where}". This would affect ALL rows. Set allowEmptyWhere=true to proceed.`
+        warning: 'No WHERE conditions provided. This would affect ALL rows. Set allowEmptyWhere=true to proceed.'
       };
     }
     return {
       valid: true,
-      warning: `WARNING: This will affect ALL rows in the table.`
+      warning: 'WARNING: This will affect ALL rows in the table.'
     };
   }
-
   return { valid: true };
 }
 
@@ -138,8 +91,6 @@ export async function previewUpdate(
 
   logger.info('previewUpdate', 'Previewing UPDATE operation', { schema, table });
 
-  validateUserWhereClause(where);
-
   const sanitizedSchema = sanitizeIdentifier(schema);
   const sanitizedTable = sanitizeIdentifier(table);
 
@@ -151,22 +102,24 @@ export async function previewUpdate(
     };
   }
 
+  const whereResult = buildWhereClause(where);
+
   const countQuery = `
     SELECT COUNT(*) as count
     FROM ${sanitizedSchema}.${sanitizedTable}
-    WHERE ${where}
+    ${whereResult.clause ? `WHERE ${whereResult.clause}` : ''}
   `;
 
   const sampleQuery = `
     SELECT *
     FROM ${sanitizedSchema}.${sanitizedTable}
-    WHERE ${where}
+    ${whereResult.clause ? `WHERE ${whereResult.clause}` : ''}
     LIMIT ${limit}
   `;
 
   const [countResult, sampleResult] = await Promise.all([
-    executeQuery(connection, logger, { query: countQuery, params: [] }),
-    executeQuery(connection, logger, { query: sampleQuery, params: [] })
+    executeQuery(connection, logger, { query: countQuery, params: whereResult.params }),
+    executeQuery(connection, logger, { query: sampleQuery, params: whereResult.params })
   ]);
 
   const affectedCount = parseInt(countResult.rows[0]?.count || '0', 10);
@@ -192,8 +145,6 @@ export async function previewDelete(
 
   logger.info('previewDelete', 'Previewing DELETE operation', { schema, table });
 
-  validateUserWhereClause(where);
-
   const sanitizedSchema = sanitizeIdentifier(schema);
   const sanitizedTable = sanitizeIdentifier(table);
 
@@ -205,22 +156,24 @@ export async function previewDelete(
     };
   }
 
+  const whereResult = buildWhereClause(where);
+
   const countQuery = `
     SELECT COUNT(*) as count
     FROM ${sanitizedSchema}.${sanitizedTable}
-    WHERE ${where}
+    ${whereResult.clause ? `WHERE ${whereResult.clause}` : ''}
   `;
 
   const sampleQuery = `
     SELECT *
     FROM ${sanitizedSchema}.${sanitizedTable}
-    WHERE ${where}
+    ${whereResult.clause ? `WHERE ${whereResult.clause}` : ''}
     LIMIT ${limit}
   `;
 
   const [countResult, sampleResult] = await Promise.all([
-    executeQuery(connection, logger, { query: countQuery, params: [] }),
-    executeQuery(connection, logger, { query: sampleQuery, params: [] })
+    executeQuery(connection, logger, { query: countQuery, params: whereResult.params }),
+    executeQuery(connection, logger, { query: sampleQuery, params: whereResult.params })
   ]);
 
   const deleteCount = parseInt(countResult.rows[0]?.count || '0', 10);
@@ -242,12 +195,10 @@ export async function safeUpdate(
   logger: Logger,
   args: z.infer<typeof SafeUpdateSchema>
 ): Promise<any> {
-  const { table, schema, set, where, dryRun, maxRows: clientMaxRows, allowEmptyWhere, allowRawSet } = args;
+  const { table, schema, set, where, dryRun, maxRows: clientMaxRows, allowEmptyWhere } = args;
   const maxRows = clampMaxRows(clientMaxRows);
 
   logger.info('safeUpdate', 'Executing safe UPDATE', { schema, table, dryRun });
-
-  validateUserWhereClause(where);
 
   const sanitizedSchema = sanitizeIdentifier(schema);
   const sanitizedTable = sanitizeIdentifier(table);
@@ -260,13 +211,16 @@ export async function safeUpdate(
     };
   }
 
+  // For count and sample queries, build WHERE with startParam=1 (no SET params)
+  const countWhereResult = buildWhereClause(where);
+
   const countQuery = `
     SELECT COUNT(*) as count
     FROM ${sanitizedSchema}.${sanitizedTable}
-    WHERE ${where}
+    ${countWhereResult.clause ? `WHERE ${countWhereResult.clause}` : ''}
   `;
 
-  const countResult = await executeQuery(connection, logger, { query: countQuery, params: [] });
+  const countResult = await executeQuery(connection, logger, { query: countQuery, params: countWhereResult.params });
   const affectedCount = parseInt(countResult.rows[0]?.count || '0', 10);
 
   if (affectedCount > maxRows) {
@@ -278,13 +232,14 @@ export async function safeUpdate(
   }
 
   if (dryRun) {
+    const sampleWhereResult = buildWhereClause(where);
     const sampleQuery = `
       SELECT *
       FROM ${sanitizedSchema}.${sanitizedTable}
-      WHERE ${where}
+      ${sampleWhereResult.clause ? `WHERE ${sampleWhereResult.clause}` : ''}
       LIMIT 5
     `;
-    const sampleResult = await executeQuery(connection, logger, { query: sampleQuery, params: [] });
+    const sampleResult = await executeQuery(connection, logger, { query: sampleQuery, params: sampleWhereResult.params });
 
     return {
       dryRun: true,
@@ -298,34 +253,29 @@ export async function safeUpdate(
     };
   }
 
-  let setClause: string;
-  let params: any[] = [];
+  // Build SET clause with parameterized values
+  const setClauses: string[] = [];
+  const setParams: any[] = [];
+  let paramIndex = 1;
 
-  if (typeof set === 'string') {
-    if (!allowRawSet) {
-      throw new Error('Raw SET strings are disabled by default. Provide an object or set allowRawSet=true.');
-    }
-    validateRawSetClause(set);
-    setClause = set;
-  } else {
-    const setClauses: string[] = [];
-    let paramIndex = 1;
-
-    for (const [column, value] of Object.entries(set)) {
-      setClauses.push(`${sanitizeIdentifier(column)} = $${paramIndex}`);
-      params.push(value);
-      paramIndex++;
-    }
-    setClause = setClauses.join(', ');
+  for (const [column, value] of Object.entries(set)) {
+    setClauses.push(`${sanitizeIdentifier(column)} = $${paramIndex}`);
+    setParams.push(value);
+    paramIndex++;
   }
+  const setClause = setClauses.join(', ');
+
+  // Build WHERE with offset after SET params
+  const whereResult = buildWhereClause(where, paramIndex);
+  const allParams = [...setParams, ...whereResult.params];
 
   const updateQuery = `
     UPDATE ${sanitizedSchema}.${sanitizedTable}
     SET ${setClause}
-    WHERE ${where}
+    ${whereResult.clause ? `WHERE ${whereResult.clause}` : ''}
   `;
 
-  const result = await executeQuery(connection, logger, { query: updateQuery, params });
+  const result = await executeQuery(connection, logger, { query: updateQuery, params: allParams });
 
   return {
     success: true,
@@ -347,8 +297,6 @@ export async function safeDelete(
 
   logger.info('safeDelete', 'Executing safe DELETE', { schema, table, dryRun });
 
-  validateUserWhereClause(where);
-
   const sanitizedSchema = sanitizeIdentifier(schema);
   const sanitizedTable = sanitizeIdentifier(table);
 
@@ -360,13 +308,15 @@ export async function safeDelete(
     };
   }
 
+  const whereResult = buildWhereClause(where);
+
   const countQuery = `
     SELECT COUNT(*) as count
     FROM ${sanitizedSchema}.${sanitizedTable}
-    WHERE ${where}
+    ${whereResult.clause ? `WHERE ${whereResult.clause}` : ''}
   `;
 
-  const countResult = await executeQuery(connection, logger, { query: countQuery, params: [] });
+  const countResult = await executeQuery(connection, logger, { query: countQuery, params: whereResult.params });
   const deleteCount = parseInt(countResult.rows[0]?.count || '0', 10);
 
   if (deleteCount > maxRows) {
@@ -378,13 +328,14 @@ export async function safeDelete(
   }
 
   if (dryRun) {
+    const sampleWhereResult = buildWhereClause(where);
     const sampleQuery = `
       SELECT *
       FROM ${sanitizedSchema}.${sanitizedTable}
-      WHERE ${where}
+      ${sampleWhereResult.clause ? `WHERE ${sampleWhereResult.clause}` : ''}
       LIMIT 5
     `;
-    const sampleResult = await executeQuery(connection, logger, { query: sampleQuery, params: [] });
+    const sampleResult = await executeQuery(connection, logger, { query: sampleQuery, params: sampleWhereResult.params });
 
     return {
       dryRun: true,
@@ -397,12 +348,14 @@ export async function safeDelete(
     };
   }
 
+  const deleteWhereResult = buildWhereClause(where);
+
   const deleteQuery = `
     DELETE FROM ${sanitizedSchema}.${sanitizedTable}
-    WHERE ${where}
+    ${deleteWhereResult.clause ? `WHERE ${deleteWhereResult.clause}` : ''}
   `;
 
-  const result = await executeQuery(connection, logger, { query: deleteQuery, params: [] });
+  const result = await executeQuery(connection, logger, { query: deleteQuery, params: deleteWhereResult.params });
 
   return {
     success: true,
@@ -522,7 +475,7 @@ export async function safeInsert(
 }
 
 /** @internal Exposed for testing only */
-export function _testNormalizeWhereForSafety(where: string): boolean {
+export function _testNormalizeWhereForSafety(where: WhereCondition[]): boolean {
   const validation = validateWhereClause(where, false);
   return !validation.valid;
 }
