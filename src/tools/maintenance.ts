@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { DatabaseConnection } from '../types.js';
 import { Logger } from '../utils/logger.js';
-import { ensureDatabaseExists, executeQuery, getCurrentDatabaseName } from '../utils/database.js';
+import { ensureDatabaseExists, executeInternalQuery, getCurrentDatabaseName } from '../utils/database.js';
 import { escapeIdentifier, sanitizeIdentifier } from '../utils/sanitize.js';
 
 const AnalyzeTableBloatSchema = z.object({
@@ -85,8 +85,8 @@ export async function analyzeTableBloat(
   `;
 
   const [tableBloatResult, indexBloatResult] = await Promise.all([
-    executeQuery(connection, logger, { query: tableBloatQuery, params }),
-    executeQuery(connection, logger, { query: indexBloatQuery, params })
+    executeInternalQuery(connection, logger, { query: tableBloatQuery, params }),
+    executeInternalQuery(connection, logger, { query: indexBloatQuery, params })
   ]);
 
   const analysis: any[] = [];
@@ -209,7 +209,7 @@ export async function suggestVacuum(
     ORDER BY pg_stat_get_dead_tuples(c.oid) DESC
   `;
 
-  const result = await executeQuery(connection, logger, {
+  const result = await executeInternalQuery(connection, logger, {
     query,
     params: [sanitizedSchema, minDeadTuples]
   });
@@ -412,7 +412,7 @@ export async function getSlowQueries(
     WHERE extname = 'pg_stat_statements'
   `;
 
-  const extResult = await executeQuery(connection, logger, { query: extensionCheck });
+  const extResult = await executeInternalQuery(connection, logger, { query: extensionCheck });
   const hasExtension = parseInt(extResult.rows[0]?.count || '0', 10) > 0;
 
   if (!hasExtension) {
@@ -444,7 +444,7 @@ export async function getSlowQueries(
     LIMIT $2
   `;
 
-  const result = await executeQuery(connection, logger, {
+  const result = await executeInternalQuery(connection, logger, {
     query,
     params: [minDurationMs, limit]
   });
@@ -506,7 +506,7 @@ async function getCacheHitRatio(connection: DatabaseConnection, logger: Logger):
     FROM pg_stat_database
     WHERE datname = current_database()
   `;
-  const result = await executeQuery(connection, logger, { query });
+  const result = await executeInternalQuery(connection, logger, { query });
   return { ratio: parseFloat(result.rows[0]?.ratio || '1') };
 }
 
@@ -516,7 +516,7 @@ async function getConnectionHealth(connection: DatabaseConnection, logger: Logge
       (SELECT COUNT(*) FROM pg_stat_activity)::numeric /
       NULLIF((SELECT setting::int FROM pg_settings WHERE name = 'max_connections'), 0) as usage
   `;
-  const result = await executeQuery(connection, logger, { query });
+  const result = await executeInternalQuery(connection, logger, { query });
   return { usage: parseFloat(result.rows[0]?.usage || '0') };
 }
 
@@ -540,7 +540,7 @@ async function getBloatHealth(connection: DatabaseConnection, logger: Logger): P
     FROM pg_stat_user_tables s
     JOIN pg_class c ON c.relname = s.relname
   `;
-  const result = await executeQuery(connection, logger, { query });
+  const result = await executeInternalQuery(connection, logger, { query });
   return {
     avgBloat: parseFloat(result.rows[0]?.avg_bloat || '0'),
     avgDeadPercent: parseFloat(result.rows[0]?.avg_dead_percent || '0')
@@ -555,7 +555,7 @@ async function getIndexHealth(connection: DatabaseConnection, logger: Logger): P
       COUNT(*) FILTER (WHERE idx_scan > 0)::numeric / NULLIF(COUNT(*), 0) as usage_ratio
     FROM pg_stat_user_indexes
   `;
-  const result = await executeQuery(connection, logger, { query });
+  const result = await executeInternalQuery(connection, logger, { query });
   return {
     unusedCount: parseInt(result.rows[0]?.unused_count || '0', 10),
     unusedSizeMB: (parseInt(result.rows[0]?.unused_size || '0', 10) / 1024 / 1024),
@@ -572,7 +572,7 @@ async function getActivityHealth(connection: DatabaseConnection, logger: Logger)
       ) as long_running
     FROM pg_stat_activity
   `;
-  const result = await executeQuery(connection, logger, { query });
+  const result = await executeInternalQuery(connection, logger, { query });
   return {
     longRunning: parseInt(result.rows[0]?.long_running || '0', 10)
   };
@@ -584,7 +584,7 @@ async function getReplicationHealth(connection: DatabaseConnection, logger: Logg
       SELECT COALESCE(MAX(EXTRACT(EPOCH FROM (NOW() - pg_last_xact_replay_timestamp()))), 0) as lag
       FROM pg_stat_replication
     `;
-    const result = await executeQuery(connection, logger, { query });
+    const result = await executeInternalQuery(connection, logger, { query });
     return { lag: parseFloat(result.rows[0]?.lag || '0') };
   } catch {
     return { lag: 0 };

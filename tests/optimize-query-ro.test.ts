@@ -81,9 +81,9 @@ describe('optimizeQuery in read-only mode', () => {
     rwConnection = createMockConnection('read-write');
     logger = createMockLogger();
 
-    // Mock executeQuery at the module level
+    // Mock executeInternalQuery at the module level
     const dbModule = await import('../src/utils/database.js');
-    mockExecuteQuery = vi.spyOn(dbModule, 'executeQuery');
+    mockExecuteQuery = vi.spyOn(dbModule, 'executeInternalQuery');
   });
 
   it('does not crash when Execution Time is missing (RO mode)', async () => {

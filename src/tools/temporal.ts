@@ -1,14 +1,14 @@
 import { z } from 'zod';
 import { DatabaseConnection } from '../types.js';
 import { Logger } from '../utils/logger.js';
-import { executeQuery } from '../utils/database.js';
-import { escapeIdentifier, sanitizeIdentifier, validateInterval, validateOrderBy } from '../utils/sanitize.js';
+import { executeInternalQuery } from '../utils/database.js';
+import { escapeIdentifier, sanitizeIdentifier, normalizeInterval, validateOrderBy } from '../utils/sanitize.js';
 import { WhereConditionSchema, buildWhereClause } from '../utils/query-builder.js';
 
 const FindRecentSchema = z.object({
   table: z.string(),
   timestampColumn: z.string(),
-  timeWindow: z.string().describe('PostgreSQL interval format, e.g., "7 days", "2 hours", "30 minutes"'),
+  timeWindow: z.string().describe('Time interval, e.g., "7 days", "2 hours", "30 minutes", or shorthand "7d", "2h", "30m", "1y"'),
   schema: z.string().optional().default('public'),
   where: z.array(WhereConditionSchema).optional(),
   limit: z.number().optional().default(100),
@@ -46,7 +46,7 @@ export async function findRecent(
 
   logger.info('findRecent', 'Finding recent records', { table, timeWindow });
 
-  validateInterval(timeWindow);
+  const normalizedTimeWindow = normalizeInterval(timeWindow);
   if (orderBy) {
     validateOrderBy(orderBy);
   }
@@ -75,7 +75,7 @@ export async function findRecent(
   const query = `
     SELECT *
     FROM ${escapeIdentifier(sanitizedSchema)}.${escapeIdentifier(sanitizedTable)}
-    WHERE ${escapeIdentifier(sanitizedTimestamp)} >= NOW() - INTERVAL '${timeWindow}'
+    WHERE ${escapeIdentifier(sanitizedTimestamp)} >= NOW() - INTERVAL '${normalizedTimeWindow}'
       ${whereClause}
     ORDER BY ${orderClause}
     LIMIT $1
@@ -84,22 +84,22 @@ export async function findRecent(
   const countQuery = `
     SELECT
       COUNT(*) as rows_found,
-      NOW() - INTERVAL '${timeWindow}' as threshold
+      NOW() - INTERVAL '${normalizedTimeWindow}' as threshold
     FROM ${escapeIdentifier(sanitizedSchema)}.${escapeIdentifier(sanitizedTable)}
-    WHERE ${escapeIdentifier(sanitizedTimestamp)} >= NOW() - INTERVAL '${timeWindow}'
+    WHERE ${escapeIdentifier(sanitizedTimestamp)} >= NOW() - INTERVAL '${normalizedTimeWindow}'
       ${countWhereClause}
   `;
 
   const [result, countResult] = await Promise.all([
-    executeQuery(connection, logger, { query, params: queryParams }),
-    executeQuery(connection, logger, { query: countQuery, params: countParams })
+    executeInternalQuery(connection, logger, { query, params: queryParams }),
+    executeInternalQuery(connection, logger, { query: countQuery, params: countParams })
   ]);
 
   return {
     table,
     schema,
     timestampColumn,
-    timeWindow: `Last ${timeWindow}`,
+    timeWindow: `Last ${normalizedTimeWindow}`,
     threshold: countResult.rows[0]?.threshold,
     rowsFound: parseInt(countResult.rows[0]?.rows_found || '0', 10),
     rows: result.rows
@@ -205,8 +205,8 @@ export async function analyzeTimeSeries(
   `;
 
   const [timeSeriesResult, statsResult] = await Promise.all([
-    executeQuery(connection, logger, { query: baseQuery, params }),
-    executeQuery(connection, logger, { query: statsQuery, params })
+    executeInternalQuery(connection, logger, { query: baseQuery, params }),
+    executeInternalQuery(connection, logger, { query: statsQuery, params })
   ]);
 
   const timeSeries = timeSeriesResult.rows.map(row => {
@@ -321,7 +321,7 @@ export async function detectSeasonality(
       END
   `;
 
-  const result = await executeQuery(connection, logger, {
+  const result = await executeInternalQuery(connection, logger, {
     query,
     params: [minPeriods]
   });

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { DatabaseConnection } from '../types.js';
 import { Logger } from '../utils/logger.js';
-import { executeQuery } from '../utils/database.js';
+import { executeInternalQuery } from '../utils/database.js';
 import { escapeIdentifier, sanitizeIdentifier } from '../utils/sanitize.js';
 import { WhereConditionSchema, buildWhereClause } from '../utils/query-builder.js';
 
@@ -60,7 +60,7 @@ export async function exportTable(
   `;
 
   const startTime = Date.now();
-  const result = await executeQuery(connection, logger, {
+  const result = await executeInternalQuery(connection, logger, {
     query,
     params: queryParams
   });
@@ -130,7 +130,7 @@ export async function generateInsertStatements(
     ORDER BY ordinal_position
   `;
 
-  const columnsResult = await executeQuery(connection, logger, {
+  const columnsResult = await executeInternalQuery(connection, logger, {
     query: columnsQuery,
     params: [sanitizedSchema, sanitizedTable]
   });
@@ -153,7 +153,7 @@ export async function generateInsertStatements(
     LIMIT $1
   `;
 
-  const dataResult = await executeQuery(connection, logger, {
+  const dataResult = await executeInternalQuery(connection, logger, {
     query: dataQuery,
     params: dataQueryParams
   });

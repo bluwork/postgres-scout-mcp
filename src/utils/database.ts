@@ -37,7 +37,7 @@ export async function executeQuery(
   const { query, params: queryParams = [], options = {} } = params;
   const { config, pool } = connection;
 
-  sanitizeQuery(query, config.mode);
+  sanitizeQuery(query, config.mode, { internal: options.internal });
 
   const timeout = options.timeout || config.queryTimeout;
   const maxRows = options.maxRows || config.maxResultRows;
@@ -97,12 +97,23 @@ export async function executeQuery(
   }
 }
 
+export async function executeInternalQuery(
+  connection: DatabaseConnection,
+  logger: Logger,
+  params: QueryParams
+): Promise<QueryResult<any>> {
+  return executeQuery(connection, logger, {
+    ...params,
+    options: { ...params.options, internal: true }
+  });
+}
+
 export async function getCurrentDatabaseName(
   connection: DatabaseConnection,
   logger: Logger
 ): Promise<string> {
   const query = 'SELECT current_database() as name';
-  const result = await executeQuery(connection, logger, { query });
+  const result = await executeInternalQuery(connection, logger, { query });
   return result.rows[0]?.name || connection.pool.options.database || 'current';
 }
 
@@ -116,7 +127,7 @@ export async function ensureDatabaseExists(
     FROM pg_catalog.pg_database
     WHERE datname = $1
   `;
-  const result = await executeQuery(connection, logger, { query, params: [database] });
+  const result = await executeInternalQuery(connection, logger, { query, params: [database] });
 
   if (result.rowCount === 0) {
     throw new Error(`Database "${database}" does not exist`);
