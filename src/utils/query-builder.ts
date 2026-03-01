@@ -64,20 +64,60 @@ export interface WhereClauseResult {
 
 const MAX_SAFE_BETWEEN_RANGE = 1_000_000_000; // 1 billion — any range wider than this is suspicious
 
+type ComplementaryPair = { op1: ComparisonOp | 'IS NULL' | 'IS NOT NULL'; op2: ComparisonOp | 'IS NULL' | 'IS NOT NULL' };
+const COMPLEMENTARY_OPS: ComplementaryPair[] = [
+  { op1: '>', op2: '<=' },
+  { op1: '>=', op2: '<' },
+  { op1: '=', op2: '!=' },
+  { op1: 'IS NULL', op2: 'IS NOT NULL' },
+];
+
+function checkOrGroupTriviallyTrue(conditions: WhereCondition[]): void {
+  const leaves = conditions.filter((c): c is Exclude<WhereCondition, { and: any } | { or: any }> => 'op' in c);
+
+  for (let i = 0; i < leaves.length; i++) {
+    for (let j = i + 1; j < leaves.length; j++) {
+      const a = leaves[i];
+      const b = leaves[j];
+      if (a.field !== b.field) continue;
+
+      for (const pair of COMPLEMENTARY_OPS) {
+        const match =
+          (a.op === pair.op1 && b.op === pair.op2) ||
+          (a.op === pair.op2 && b.op === pair.op1);
+        if (!match) continue;
+
+        if (pair.op1 === 'IS NULL') {
+          throw new Error(
+            `Trivially true condition detected: OR(${a.field} IS NULL, ${a.field} IS NOT NULL) matches all rows.`
+          );
+        }
+
+        if ('value' in a && 'value' in b && a.value === b.value) {
+          throw new Error(
+            `Trivially true condition detected: OR(${a.field} ${a.op} ${a.value}, ${b.field} ${b.op} ${b.value}) matches all rows.`
+          );
+        }
+      }
+    }
+  }
+}
+
 function checkLeafTriviallyTrue(condition: WhereCondition): void {
   if ('and' in condition) {
     for (const c of condition.and) checkLeafTriviallyTrue(c);
     return;
   }
   if ('or' in condition) {
+    checkOrGroupTriviallyTrue(condition.or);
     for (const c of condition.or) checkLeafTriviallyTrue(c);
     return;
   }
 
-  // LIKE/ILIKE '%' or '%%'
+  // LIKE/ILIKE wildcard-only patterns (%, %%, _%, %_%, __, etc.)
   if ((condition.op === 'LIKE' || condition.op === 'ILIKE') && 'value' in condition) {
     const val = String(condition.value);
-    if (/^%+$/.test(val)) {
+    if (val.replace(/[%_]/g, '') === '') {
       throw new Error(
         `Trivially true condition detected: ${condition.op} '${val}' matches all rows. Use a more specific pattern.`
       );

@@ -672,3 +672,99 @@ describe('assertNoSensitiveCatalogAccess: user query catalog blocking (R3-001/00
     ).not.toThrow();
   });
 });
+
+describe('sanitizeQuery: round 4 — stats reset, sequence manipulation, WAL ops', () => {
+  // R4-001: pg_stat_reset family
+  const statResetFunctions = [
+    'pg_stat_reset()',
+    "pg_stat_reset_shared('bgwriter')",
+    'pg_stat_reset_single_table_counters(12345)',
+    "pg_stat_reset_slru('CommitTs')",
+    "pg_stat_reset_replication_slot('my_slot')",
+  ];
+
+  for (const fn of statResetFunctions) {
+    it(`should reject ${fn.split('(')[0]}`, () => {
+      expect(() =>
+        sanitizeQuery(`SELECT ${fn}`, 'read-only')
+      ).toThrow();
+    });
+  }
+
+  // R4-002: sequence manipulation
+  it('should reject setval', () => {
+    expect(() =>
+      sanitizeQuery("SELECT setval('my_seq', 1000)", 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject nextval', () => {
+    expect(() =>
+      sanitizeQuery("SELECT nextval('my_seq')", 'read-only')
+    ).toThrow();
+  });
+
+  // R4-003: WAL / restore-point / logical message
+  it('should reject pg_switch_wal', () => {
+    expect(() =>
+      sanitizeQuery('SELECT pg_switch_wal()', 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject pg_create_restore_point', () => {
+    expect(() =>
+      sanitizeQuery("SELECT pg_create_restore_point('before_deploy')", 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject pg_logical_emit_message', () => {
+    expect(() =>
+      sanitizeQuery("SELECT pg_logical_emit_message(true, 'prefix', 'msg')", 'read-only')
+    ).toThrow();
+  });
+
+  // Case insensitivity
+  it('should reject PG_STAT_RESET (upper case)', () => {
+    expect(() =>
+      sanitizeQuery('SELECT PG_STAT_RESET()', 'read-only')
+    ).toThrow();
+  });
+
+  it('should reject SETVAL (upper case)', () => {
+    expect(() =>
+      sanitizeQuery("SELECT SETVAL('my_seq', 1)", 'read-only')
+    ).toThrow();
+  });
+
+  // Blocked in read-write mode too
+  it('should reject setval in read-write mode', () => {
+    expect(() =>
+      sanitizeQuery("SELECT setval('my_seq', 1)", 'read-write')
+    ).toThrow();
+  });
+
+  it('should reject pg_switch_wal in read-write mode', () => {
+    expect(() =>
+      sanitizeQuery('SELECT pg_switch_wal()', 'read-write')
+    ).toThrow();
+  });
+
+  // False-positive safety: legitimate functions must still pass
+  it('should allow pg_stat_user_tables (not pg_stat_reset)', () => {
+    expect(() =>
+      sanitizeQuery('SELECT * FROM pg_stat_user_tables', 'read-only')
+    ).not.toThrow();
+  });
+
+  it('should allow currval (not setval/nextval)', () => {
+    expect(() =>
+      sanitizeQuery("SELECT currval('my_seq')", 'read-only')
+    ).not.toThrow();
+  });
+
+  it('should allow columns containing "setval" substring', () => {
+    expect(() =>
+      sanitizeQuery('SELECT resetval_count FROM metrics', 'read-only')
+    ).not.toThrow();
+  });
+});

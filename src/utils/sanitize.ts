@@ -94,6 +94,19 @@ const QUERY_DANGEROUS_FUNCTIONS = [
   // DoS / resource exhaustion (R3-016, R3-017)
   /\bgenerate_series\s*\(/i,
   /\brepeat\s*\(/i,
+  // Stats reset (R4-001) — can zero out monitoring data
+  /\bpg_stat_reset\s*\(/i,
+  /\bpg_stat_reset_shared\s*\(/i,
+  /\bpg_stat_reset_single_table_counters\s*\(/i,
+  /\bpg_stat_reset_slru\s*\(/i,
+  /\bpg_stat_reset_replication_slot\s*\(/i,
+  // Sequence manipulation (R4-002) — can alter auto-increment state
+  /\bsetval\s*\(/i,
+  /\bnextval\s*\(/i,
+  // WAL / restore-point / logical replication (R4-003)
+  /\bpg_switch_wal\s*\(/i,
+  /\bpg_create_restore_point\s*\(/i,
+  /\bpg_logical_emit_message\s*\(/i,
 ];
 
 const SENSITIVE_CATALOGS = [
