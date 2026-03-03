@@ -1,6 +1,6 @@
 {
   "name": "postgres-scout-mcp",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Scout your PostgreSQL databases with AI - A production-ready MCP server with safety features, monitoring, and data quality tools",
   "main": "dist/index.js",
   "type": "module",
