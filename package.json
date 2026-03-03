@@ -54,5 +54,6 @@
     "@types/pg": "^8.10.9",
     "typescript": "^5.9.3",
     "vitest": "^4.0.18"
-  }
+  },
+  "mcpName": "io.github.bluwork/postgres-scout-mcp"
 }
