@@ -2,6 +2,8 @@
 
 Scout your PostgreSQL databases with AI - A production-ready Model Context Protocol server with built-in safety features, monitoring, and data quality tools.
 
+[![npm](https://img.shields.io/npm/v/postgres-scout-mcp)](https://www.npmjs.com/package/postgres-scout-mcp) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
 ## Setup
 
 ### Claude Desktop / Claude Code
