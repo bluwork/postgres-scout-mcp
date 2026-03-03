@@ -2,31 +2,91 @@
 
 Scout your PostgreSQL databases with AI - A production-ready Model Context Protocol server with built-in safety features, monitoring, and data quality tools.
 
-## Setup
+[![npm](https://img.shields.io/npm/v/postgres-scout-mcp)](https://www.npmjs.com/package/postgres-scout-mcp) [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
-### Claude Desktop / Claude Code
+## What You Get
 
-Add to your MCP config (`~/.config/claude-desktop/config.json` or `~/.claude.json`):
+You ask:
+
+> *"How healthy is my production database? Any urgent issues?"*
+
+Postgres Scout returns:
+
+---
+
+### Overall Health Score: 78/100
+
+**Component Breakdown**
+| Component | Score | Status |
+|-----------|-------|--------|
+| Cache Performance | 94/100 | Healthy |
+| Index Efficiency | 82/100 | Good |
+| Table Bloat | 61/100 | Needs Attention |
+| Connection Usage | 75/100 | Fair |
+
+**Issues Found**
+- **HIGH** — Table `orders` has 34% bloat (2.1 GB wasted). VACUUM FULL recommended.
+- **MEDIUM** — 3 unused indexes on `sessions` consuming 890 MB.
+- **LOW** — Cache hit ratio for `analytics_events` is 71% (target: >90%).
+
+**Recommendations**
+- Run `VACUUM FULL orders` during maintenance window
+- Drop unused indexes: `idx_sessions_legacy`, `idx_sessions_old_token`, `idx_sessions_temp`
+- Consider adding `analytics_events` to shared_buffers or partitioning by date
+
+---
+
+That's `getHealthScore` — one of 38 tools covering exploration, diagnostics, optimization, monitoring, data quality, and safe writes.
+
+## Quick Start
+
+### Claude Code
+
+```bash
+claude mcp add postgres-scout -- npx -y postgres-scout-mcp postgresql://localhost:5432/mydb
+```
+
+Then ask: *"Show me the largest tables and whether they have any bloat issues."*
+
+<details>
+<summary>Claude Desktop</summary>
+
+Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
 
 ```json
 {
   "mcpServers": {
     "postgres-scout": {
       "command": "npx",
-      "args": [
-        "-y",
-        "postgres-scout-mcp",
-        "postgresql://localhost:5432/mydb"
-      ],
+      "args": ["-y", "postgres-scout-mcp", "postgresql://localhost:5432/mydb"],
       "type": "stdio"
     }
   }
 }
 ```
 
-### Recommended: Separate Read-Only and Read-Write Instances
+</details>
 
-The server runs in **read-only mode by default** for safety. For write operations, use a separate instance:
+<details>
+<summary>Cursor / VS Code</summary>
+
+Add to your MCP settings:
+
+```json
+{
+  "postgres-scout": {
+    "command": "npx",
+    "args": ["-y", "postgres-scout-mcp", "postgresql://localhost:5432/mydb"]
+  }
+}
+```
+
+</details>
+
+<details>
+<summary>Read-Only vs Read-Write</summary>
+
+The server runs in **read-only mode by default**. For write operations, run a separate instance:
 
 ```json
 {
@@ -45,62 +105,79 @@ The server runs in **read-only mode by default** for safety. For write operation
 }
 ```
 
-This gives you:
-- **postgres-scout-readonly**: Safe exploration without risk of data modification
-- **postgres-scout-readwrite**: Write operations available when explicitly needed
-- Clear separation of capabilities
-- Option to point read-write to a development database for extra safety
+- **postgres-scout-readonly**: Safe exploration, no risk of data modification
+- **postgres-scout-readwrite**: Write operations when explicitly needed
 
-### Global Install
+</details>
 
-```bash
-npm install -g postgres-scout-mcp
-postgres-scout-mcp postgresql://localhost:5432/mydb
-```
+## Tools
 
-### Standalone Usage
+### Explore — understand your database
 
-```bash
-# Default read-only mode (safest)
-postgres-scout-mcp
+- `listDatabases` — databases the user has access to
+- `getDatabaseStats` — size, cache hit ratio, connection info
+- `listSchemas` — all schemas in the current database
+- `listTables` — tables with size and row statistics
+- `describeTable` — columns, constraints, indexes, and more
 
-# Explicitly enable read-write mode (use with caution)
-postgres-scout-mcp --read-write
+### Query — run and analyze
 
-# With custom URI in read-only mode
-postgres-scout-mcp postgresql://localhost:5432/mydb
+- `executeQuery` — run SELECT queries (or writes in read-write mode)
+- `explainQuery` — EXPLAIN plans for performance analysis
+- `optimizeQuery` — optimization recommendations for a specific query
 
-# Read-write mode with custom connection
-postgres-scout-mcp --read-write postgresql://localhost:5432/mydb
-```
+### Diagnose — find problems before they find you
 
-### Command Line Options
+- `getHealthScore` — overall health score with component breakdown
+- `detectAnomalies` — anomalies in performance, connections, and data
+- `analyzeTableBloat` — bloat analysis for VACUUM planning
+- `getSlowQueries` — slow query analysis (requires pg_stat_statements)
+- `suggestVacuum` — VACUUM recommendations based on dead tuples and bloat
 
-```
---read-only          Run server in read-only mode (default)
---read-write         Run server in read-write mode (enables all write operations)
---mode <mode>        Set mode: 'read-only' or 'read-write'
-```
+### Optimize — make it faster
 
-### Environment Variables
+- `suggestIndexes` — missing index recommendations from query patterns
+- `suggestPartitioning` — partitioning strategies for large tables
+- `getIndexUsage` — identify unused or underused indexes
 
-```bash
-# Security
-QUERY_TIMEOUT=30000         # milliseconds (default: 30s)
-MAX_RESULT_ROWS=10000       # prevent memory exhaustion
-ENABLE_RATE_LIMIT=true
-RATE_LIMIT_MAX_REQUESTS=100
-RATE_LIMIT_WINDOW_MS=60000  # 1 minute
+### Monitor — watch it live
 
-# Logging
-LOG_DIR=./logs
-LOG_LEVEL=info              # debug, info, warn, error
+- `getCurrentActivity` — active queries and connections
+- `analyzeLocks` — lock contention and blocking queries
+- `getLiveMetrics` — real-time metrics over a time window
+- `getHottestTables` — tables with highest activity
+- `getTableMetrics` — comprehensive per-table I/O and scan stats
 
-# Connection Pool
-PGMAXPOOLSIZE=10
-PGMINPOOLSIZE=2
-PGIDLETIMEOUT=10000
-```
+### Data Quality — trust your data
+
+- `findDuplicates` — duplicate rows by column combination
+- `findMissingValues` — NULL analysis across columns
+- `findOrphans` — orphaned records with invalid foreign keys
+- `checkConstraintViolations` — test constraints before adding them
+- `analyzeTypeConsistency` — type inconsistencies in text columns
+
+### Relationships — follow the connections
+
+- `exploreRelationships` — multi-hop foreign key traversal
+- `analyzeForeignKeys` — foreign key health and performance
+
+### Time Series — temporal analysis
+
+- `findRecent` — rows within a time window
+- `analyzeTimeSeries` — window functions and anomaly detection
+- `detectSeasonality` — seasonal pattern detection
+
+### Export — get data out
+
+- `exportTable` — CSV, JSON, JSONL, or SQL
+- `generateInsertStatements` — INSERT statements for migration
+
+### Write (read-write only) — safe modifications
+
+- `previewUpdate` / `previewDelete` — see what would change before committing
+- `safeUpdate` — UPDATE with dry-run, row limits, empty WHERE protection
+- `safeDelete` — DELETE with dry-run, row limits, empty WHERE protection
+- `safeInsert` — INSERT with validation, batching, ON CONFLICT support
 
 ## Security
 
@@ -112,112 +189,68 @@ PGIDLETIMEOUT=10000
 - Query timeouts to prevent long-running queries
 - Response size limits to prevent memory exhaustion
 
-## Available Tools
+## Examples
 
-### Read Operations (both modes)
+> *"What are the largest tables and do they have bloat?"*
 
-- **Database**: `listDatabases`, `getDatabaseStats`
-- **Schema**: `listSchemas`, `listTables`, `describeTable`
-- **Query**: `executeQuery`, `explainQuery`
+```
+listTables({ schema: "public" })
+analyzeTableBloat({ schema: "public", minSizeMb: 100 })
+```
 
-### Data Quality
+> *"Find duplicate emails in the users table."*
 
-- `findDuplicates` — find duplicate rows based on column combinations
-- `findMissingValues` — NULL analysis across columns
-- `findOrphans` — find orphaned records via foreign key references
-- `checkConstraintViolations` — detect constraint issues
-- `analyzeTypeConsistency` — find type inconsistencies across rows
+```
+findDuplicates({ table: "users", columns: ["email"] })
+```
 
-### Export
+> *"Which queries are slowest and how can I speed them up?"*
 
-- `exportTable` — export to CSV, JSON, JSONL, or SQL
-- `generateInsertStatements` — generate INSERT statements with batching
+```
+getSlowQueries({ minDurationMs: 100, limit: 10 })
+suggestIndexes({ schema: "public" })
+```
 
-### Relationships
+> *"Show me what's happening on the database right now."*
 
-- `exploreRelationships` — follow multi-hop relationships and discover dependencies
-- `analyzeForeignKeys` — analyze foreign key structure
+```
+getCurrentActivity()
+getLiveMetrics({ metrics: ["queries", "connections", "cache"], duration: 30000, interval: 1000 })
+getHottestTables({ limit: 5, orderBy: "seq_scan" })
+```
 
-### Temporal Queries
+> *"Find orphaned orders that reference deleted customers."*
 
-- `findRecent` — find rows within a time window
-- `analyzeTimeSeries` — time series analysis with anomaly detection
-- `detectSeasonality` — detect seasonal patterns
+```
+findOrphans({ table: "orders", foreignKey: "customer_id", referenceTable: "customers", referenceColumn: "id" })
+```
 
-### Monitoring
+## Configuration
 
-- `getCurrentActivity` — active queries and connections
-- `analyzeLocks` — lock analysis
-- `getIndexUsage` — index usage statistics
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `QUERY_TIMEOUT` | `30000` | Query timeout in milliseconds |
+| `MAX_RESULT_ROWS` | `10000` | Maximum rows returned per query |
+| `ENABLE_RATE_LIMIT` | `true` | Enable rate limiting |
+| `RATE_LIMIT_MAX_REQUESTS` | `100` | Requests per window |
+| `RATE_LIMIT_WINDOW_MS` | `60000` | Rate limit window (ms) |
+| `PGMAXPOOLSIZE` | `10` | Connection pool max size |
+| `PGMINPOOLSIZE` | `2` | Connection pool min size |
+| `PGIDLETIMEOUT` | `10000` | Idle connection timeout (ms) |
+| `ENABLE_LOGGING` | `false` | Enable file logging |
+| `LOG_DIR` | `./logs` | Log file directory |
+| `LOG_LEVEL` | `info` | Log verbosity: debug, info, warn, error |
 
-### Live Monitoring
-
-- `getLiveMetrics` — real-time performance metrics
-- `getHottestTables` — identify most active tables
-- `getTableMetrics` — detailed metrics per table
-
-### Maintenance & Optimization
-
-- `getHealthScore` — overall database health score
-- `getSlowQueries` — slow query analysis (requires `pg_stat_statements`)
-- `analyzeTableBloat` — table bloat analysis
-- `suggestVacuum` — VACUUM recommendations
-- `suggestIndexes` — index recommendations
-- `suggestPartitioning` — partitioning suggestions
-- `detectAnomalies` — anomaly detection
-- `optimizeQuery` — query optimization suggestions
-
-### Write Operations (read-write mode only)
-
-- `previewUpdate`, `previewDelete` — preview changes before applying
-- `safeUpdate` — UPDATE with row limits and preview
-- `safeDelete` — DELETE with row limits and preview
-- `safeInsert` — INSERT with validation
+CLI flags: `--read-only` (default), `--read-write`, `--mode <mode>`
 
 ## Logging
 
-File logging is **disabled by default**. Enable it with the `ENABLE_LOGGING=true` environment variable:
+File logging is disabled by default. Set `ENABLE_LOGGING=true` to enable. Two log files are created in `LOG_DIR`:
 
-```json
-{
-  "mcpServers": {
-    "postgres-scout": {
-      "command": "npx",
-      "args": ["-y", "postgres-scout-mcp", "postgresql://localhost:5432/mydb"],
-      "env": { "ENABLE_LOGGING": "true", "LOG_DIR": "./logs" },
-      "type": "stdio"
-    }
-  }
-}
-```
+- **tool-usage.log** — every tool call with timestamp, name, and arguments
+- **error.log** — errors with stack traces
 
-When enabled, two log files are created in `LOG_DIR` (defaults to `./logs`):
-
-- **tool-usage.log**: Every tool call with timestamp, tool name, and arguments
-- **error.log**: Errors with stack traces and the arguments that caused them
-
-## Examples
-
-### Basic Operations
-```
-executeQuery({ query: "SELECT id, email FROM users WHERE status = $1 LIMIT 10", params: ["active"] })
-explainQuery({ query: "SELECT * FROM orders WHERE customer_id = $1", params: [123], analyze: true })
-listTables({ schema: "public" })
-```
-
-### Data Quality
-```
-findDuplicates({ table: "users", columns: ["email"] })
-findOrphans({ table: "orders", column: "customer_id", referencedTable: "customers", referencedColumn: "id" })
-findMissingValues({ table: "users", columns: ["email", "phone"] })
-```
-
-### Monitoring
-```
-getLiveMetrics({ metrics: ["queries", "connections", "cache"], duration: 30000, interval: 1000 })
-getHottestTables({ limit: 5, orderBy: "seq_scan" })
-getSlowQueries({ minDurationMs: 100, limit: 10 })
-```
+Connection strings are automatically redacted in all output.
 
 ## Development
 
