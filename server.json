@@ -2,14 +2,14 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-16/server.schema.json",
   "name": "io.github.bluwork/postgres-scout-mcp",
   "description": "Scout your PostgreSQL databases with AI - safety features, monitoring, and data quality",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "packages": [
     {
       "identifier": "postgres-scout-mcp",
       "registryBaseUrl": "https://registry.npmjs.org",
       "registryType": "npm",
       "transport": { "type": "stdio" },
-      "version": "1.0.1",
+      "version": "1.0.2",
       "packageArguments": [
         {
           "description": "Server mode: read-only (default) or read-write",
