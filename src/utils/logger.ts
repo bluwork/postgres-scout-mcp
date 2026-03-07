@@ -8,14 +8,16 @@ export class Logger {
   private logLevel: 'debug' | 'info' | 'warn' | 'error';
   private toolLogPath: string;
   private errorLogPath: string;
+  private fileLoggingEnabled: boolean;
 
   constructor(logDir: string, logLevel: 'debug' | 'info' | 'warn' | 'error' = 'info') {
     this.logDir = logDir;
     this.logLevel = logLevel;
     this.toolLogPath = join(logDir, 'tool-usage.log');
     this.errorLogPath = join(logDir, 'error.log');
+    this.fileLoggingEnabled = process.env.ENABLE_LOGGING === 'true';
 
-    if (!existsSync(logDir)) {
+    if (this.fileLoggingEnabled && !existsSync(logDir)) {
       mkdirSync(logDir, { recursive: true });
     }
   }
@@ -60,10 +62,12 @@ export class Logger {
 
     console.error(formatted.trim());
 
-    this.writeLog(this.toolLogPath, formatted);
+    if (this.fileLoggingEnabled) {
+      this.writeLog(this.toolLogPath, formatted);
 
-    if (level === 'error') {
-      this.writeLog(this.errorLogPath, formatted);
+      if (level === 'error') {
+        this.writeLog(this.errorLogPath, formatted);
+      }
     }
   }
 
