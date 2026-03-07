@@ -5,6 +5,7 @@ vi.mock('fs', () => ({
   existsSync: vi.fn().mockReturnValue(false),
   mkdirSync: vi.fn(),
   appendFileSync: vi.fn(),
+  writeFileSync: vi.fn(),
 }));
 
 describe('Logger opt-in file logging', () => {
